@@ -1,31 +1,54 @@
 import SwiftUI
 
 struct ProfileView: View {
+    @EnvironmentObject private var profileStore: ProfileStore
+    @EnvironmentObject private var vkAuth: VKAuthManager
+    @AppStorage("sessionKind") private var sessionKind = "none"
     @State private var showingEditor = false
 
     var body: some View {
-        ProfileContent(isOwnProfile: true)
-            .navigationTitle("Мой профиль")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Редактировать", systemImage: "pencil") {
-                        showingEditor = true
+        ProfileContent(isOwnProfile: true, profile: profileStore.profile) {
+            showingEditor = true
+        }
+        .navigationTitle("Мой профиль")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Редактировать", systemImage: "pencil") {
+                    showingEditor = true
+                }
+                .labelStyle(.iconOnly)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Вернуться к экрану входа", systemImage: "rectangle.portrait.and.arrow.right") {
+                        vkAuth.signOut()
+                        sessionKind = "none"
                     }
-                    .labelStyle(.iconOnly)
+                } label: {
+                    Image(systemName: "ellipsis")
                 }
             }
-            .sheet(isPresented: $showingEditor) {
-                NavigationStack {
-                    EditProfileView()
+        }
+        .sheet(isPresented: $showingEditor) {
+            NavigationStack {
+                EditProfileView(profile: profileStore.profile) { updated in
+                    profileStore.profile = updated
                 }
             }
+        }
     }
 }
 
 struct MemberProfileView: View {
+    let author: RouteAuthor
+
+    init(author: RouteAuthor = MockData.alex) {
+        self.author = author
+    }
+
     var body: some View {
-        ProfileContent(isOwnProfile: false)
+        ProfileContent(isOwnProfile: false, profile: .sample, author: author) { }
             .navigationTitle("Профиль")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -39,12 +62,31 @@ struct MemberProfileView: View {
 
 private struct ProfileContent: View {
     let isOwnProfile: Bool
+    let profile: UserProfile
+    let author: RouteAuthor?
+    let edit: () -> Void
+
+    init(isOwnProfile: Bool, profile: UserProfile, author: RouteAuthor? = nil, edit: @escaping () -> Void) {
+        self.isOwnProfile = isOwnProfile
+        self.profile = profile
+        self.author = author
+        self.edit = edit
+    }
+
+    private var vehicles: [Vehicle] {
+        isOwnProfile ? profile.vehicles : (author?.vehicles ?? [])
+    }
+
+    private var publicRoutes: [TrailRoute] {
+        let routes = MockData.routes.filter { !$0.isPrivate }
+        return isOwnProfile ? Array(routes.prefix(3)) : routes.filter { $0.author.id == author?.id }
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(spacing: 18) {
-                    Image("RouteForest")
+                    Image(isOwnProfile ? "RouteForest" : (author?.avatarImage ?? "RouteForest"))
                         .resizable()
                         .scaledToFill()
                         .frame(width: 96, height: 96)
@@ -53,13 +95,13 @@ private struct ProfileContent: View {
                         .shadow(color: Color.black.opacity(0.12), radius: 10, y: 4)
 
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(isOwnProfile ? "Иван Петров" : "Алексей Смирнов")
+                        Text(isOwnProfile ? "\(profile.firstName) \(profile.lastName)" : (author?.name ?? ""))
                             .font(.title2)
                             .fontWeight(.bold)
-                        Text(isOwnProfile ? "@ivan_atv" : "@kvadro_life")
+                        Text(isOwnProfile ? "@\(profile.username)" : "@\(author?.username ?? "")")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        Text(isOwnProfile ? "31 год, Санкт-Петербург" : "29 лет, Ленинградская область")
+                        Text(isOwnProfile ? "\(profile.birthYear) г. р., \(profile.city)" : "\(author?.birthYear ?? 0) г. р., \(author?.city ?? "")")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -87,16 +129,30 @@ private struct ProfileContent: View {
                     }
                 }
 
-                VStack(spacing: 10) {
-                    SectionTitle(title: "Техника", action: isOwnProfile ? "Редактировать" : nil)
-                    ForEach(MockData.vehicles) { vehicle in
-                        VehicleRow(vehicle: vehicle)
+                if isOwnProfile || !vehicles.isEmpty {
+                    VStack(spacing: 10) {
+                        HStack {
+                            Text("Техника")
+                                .font(.title3)
+                                .fontWeight(.bold)
+                            Spacer()
+                            if isOwnProfile {
+                                Button("Редактировать", action: edit)
+                                    .font(.subheadline)
+                            }
+                        }
+                        if isOwnProfile && profile.vehicles.isEmpty {
+                            ContentUnavailableView("Техника не добавлена", systemImage: "plus.circle", description: Text("Добавьте свой квадроцикл в профиле"))
+                        }
+                        ForEach(vehicles) { vehicle in
+                            VehicleRow(vehicle: vehicle)
+                        }
                     }
                 }
 
                 VStack(spacing: 10) {
                     SectionTitle(title: "Публичные маршруты", action: "Смотреть все")
-                    ForEach(MockData.routes.filter { !$0.isPrivate }.prefix(3)) { route in
+                    ForEach(publicRoutes) { route in
                         NavigationLink {
                             RouteDetailView(route: route)
                         } label: {
@@ -128,7 +184,7 @@ private struct ProfileStat: View {
     }
 }
 
-private struct VehicleRow: View {
+struct VehicleRow: View {
     let vehicle: Vehicle
 
     var body: some View {
@@ -142,73 +198,18 @@ private struct VehicleRow: View {
                 Text(vehicle.model)
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                Text(vehicle.year)
+                Text(String(vehicle.year))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Label("Основной", systemImage: "checkmark.seal.fill")
-                    .font(.caption2)
-                    .foregroundStyle(Color.brandOlive)
+                if vehicle.isPrimary {
+                    Label("Основной", systemImage: "checkmark.seal.fill")
+                        .font(.caption2)
+                        .foregroundStyle(Color.brandOlive)
+                }
             }
             Spacer()
         }
         .padding(10)
         .background(Color.surfaceCream, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-}
-
-private struct EditProfileView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var firstName = "Иван"
-    @State private var lastName = "Петров"
-    @State private var username = "ivan_atv"
-    @State private var age = 31
-    @State private var city = "Санкт-Петербург"
-
-    var body: some View {
-        Form {
-            Section {
-                HStack {
-                    Spacer()
-                    VStack(spacing: 10) {
-                        Image("RouteForest")
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 104, height: 104)
-                            .clipShape(Circle())
-                        Button("Изменить фото", systemImage: "camera") { }
-                    }
-                    Spacer()
-                }
-            }
-
-            Section("Основное") {
-                TextField("Имя", text: $firstName)
-                TextField("Фамилия", text: $lastName)
-                TextField("Юзернейм", text: $username)
-                    .textInputAutocapitalization(.never)
-                Stepper("Возраст: \(age)", value: $age, in: 16...90)
-                TextField("Город", text: $city)
-            }
-
-            Section("Моя техника") {
-                ForEach(MockData.vehicles) { vehicle in
-                    VehicleRow(vehicle: vehicle)
-                }
-                Button("Добавить квадроцикл", systemImage: "plus") { }
-            }
-        }
-        .navigationTitle("Редактировать профиль")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Закрыть", systemImage: "xmark") { dismiss() }
-                    .labelStyle(.iconOnly)
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Сохранить", systemImage: "checkmark") { dismiss() }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderedProminent)
-            }
-        }
     }
 }

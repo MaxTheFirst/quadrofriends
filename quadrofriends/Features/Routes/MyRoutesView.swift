@@ -10,7 +10,6 @@ enum MyRoutesTab: String, CaseIterable, Identifiable {
 struct MyRoutesView: View {
     @State private var selectedTab = MyRoutesTab.recent
     @State private var showingFolderEditor = false
-    @State private var showingRouteEditor = false
 
     private var visibleRoutes: [TrailRoute] {
         selectedTab == .recent ? MockData.routes : MockData.routes.filter(\.isPrivate)
@@ -38,7 +37,16 @@ struct MyRoutesView: View {
                 }
 
                 VStack(spacing: 10) {
-                    SectionTitle(title: "Мои папки")
+                    HStack {
+                        Text("Мои папки")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                        Spacer()
+                        Button("Новая папка") {
+                            showingFolderEditor = true
+                        }
+                        .font(.subheadline)
+                    }
                     ForEach(MockData.folders) { folder in
                         Button { } label: {
                             HStack(spacing: 12) {
@@ -72,30 +80,11 @@ struct MyRoutesView: View {
         .appBackground()
         .navigationTitle("Мои маршруты")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Новая папка", systemImage: "folder.badge.plus") {
-                    showingFolderEditor = true
-                }
-                .labelStyle(.iconOnly)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Новый маршрут", systemImage: "plus") {
-                    showingRouteEditor = true
-                }
-                .labelStyle(.iconOnly)
-            }
-        }
         .sheet(isPresented: $showingFolderEditor) {
             NavigationStack {
                 NewFolderView()
             }
             .presentationDetents([.medium])
-        }
-        .sheet(isPresented: $showingRouteEditor) {
-            NavigationStack {
-                RouteEditorView(title: "Новый маршрут")
-            }
         }
     }
 }
