@@ -3,6 +3,7 @@ import SwiftUI
 struct ProfileView: View {
     @EnvironmentObject private var profileStore: ProfileStore
     @EnvironmentObject private var vkAuth: VKAuthManager
+    @EnvironmentObject private var apiSession: APISession
     @AppStorage("sessionKind") private var sessionKind = "none"
     @State private var showingEditor = false
 
@@ -24,6 +25,7 @@ struct ProfileView: View {
                     Button("Вернуться к экрану входа", systemImage: "rectangle.portrait.and.arrow.right") {
                         vkAuth.signOut()
                         sessionKind = "none"
+                        Task { await apiSession.signOut() }
                     }
                 } label: {
                     Image(systemName: "ellipsis")

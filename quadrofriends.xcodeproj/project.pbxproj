@@ -282,6 +282,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				API_BASE_URL = "http://localhost:8080/api";
 				VK_CLIENT_ID = "";
 				VK_CLIENT_SECRET = "";
 			};
@@ -316,6 +317,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				API_BASE_URL = "https://api.quadro.friends/api";
 				VK_CLIENT_ID = "";
 				VK_CLIENT_SECRET = "";
 			};
