@@ -3,6 +3,8 @@ import SwiftUI
 
 struct ChatLocationConsentView: View {
     let chatTitle: String
+    /// Нет сессии backend: передача видна только на этом устройстве.
+    var isLocalOnly = true
     let startSharing: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -29,10 +31,12 @@ struct ChatLocationConsentView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Label("Пока сервер не подключён, передача видна только на этом устройстве.", systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if isLocalOnly {
+                        Label("В демо-режиме передача видна только на этом устройстве.", systemImage: "info.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(24)
             }

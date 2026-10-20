@@ -6,19 +6,40 @@ import UIKit
 struct ChatsTab: View {
     @EnvironmentObject private var locationStore: ChatLocationSharingStore
     @EnvironmentObject private var profileStore: ProfileStore
+    @EnvironmentObject private var apiSession: APISession
+    @EnvironmentObject private var realtime: RealtimeClient
+    @AppStorage("sessionKind") private var sessionKind = "none"
 
     var body: some View {
-        ChatsNavigationView(locationStore: locationStore, profileStore: profileStore)
-            .ignoresSafeArea()
+        ChatsNavigationView(
+            isDemo: sessionKind != "vk",
+            apiSession: apiSession,
+            realtime: realtime,
+            locationStore: locationStore,
+            profileStore: profileStore
+        )
+        // При смене режима (демо или вход через VK) экран создаётся заново с другим источником данных.
+        .id(sessionKind)
+        .ignoresSafeArea()
     }
 }
 
 private struct ChatsNavigationView: UIViewControllerRepresentable {
+    let isDemo: Bool
+    let apiSession: APISession
+    let realtime: RealtimeClient
     let locationStore: ChatLocationSharingStore
     let profileStore: ProfileStore
 
     func makeUIViewController(context: Context) -> UINavigationController {
-        let chatsController = ChatsViewController(locationStore: locationStore, profileStore: profileStore)
+        let repository: any ChatsRepository = isDemo
+            ? DemoChatsRepository()
+            : RemoteChatsRepository(session: apiSession, realtime: realtime)
+        let chatsController = ChatsViewController(
+            repository: repository,
+            locationStore: locationStore,
+            profileStore: profileStore
+        )
         let navigationController = UINavigationController(rootViewController: chatsController)
         navigationController.view.tintColor = .brandOlive
         return navigationController
@@ -32,23 +53,34 @@ final class ChatsViewController: UIViewController {
         case main
     }
 
+    private enum LoadState {
+        case idle
+        case loading
+        case failed(String)
+    }
+
+    private static let searchDebounce: Duration = .milliseconds(350)
+    private static let prefetchDistance = 5
+
+    private let repository: any ChatsRepository
     private let locationStore: ChatLocationSharingStore
     private let profileStore: ProfileStore
-    private let chats = MockData.chats
-    private var query = ""
     private var cancellables = Set<AnyCancellable>()
+
+    private var chats: [ChatPreview] = []
+    /// Данные, по которым настроены ячейки: нужны, чтобы перенастраивать только изменившиеся.
+    private var renderedChats: [ChatPreview.ID: ChatPreview] = [:]
+    private var nextCursor: String?
+    private var query = ""
+    private var loadState = LoadState.idle
+    private var reloadTask: Task<Void, Never>?
+    private var loadMoreTask: Task<Void, Never>?
 
     private lazy var collectionView = UICollectionView(frame: .zero, collectionViewLayout: makeLayout())
     private var dataSource: UICollectionViewDiffableDataSource<Section, ChatPreview.ID>!
 
-    private var filteredChats: [ChatPreview] {
-        guard !query.isEmpty else { return chats }
-        return chats.filter {
-            $0.title.localizedCaseInsensitiveContains(query) || $0.subtitle.localizedCaseInsensitiveContains(query)
-        }
-    }
-
-    init(locationStore: ChatLocationSharingStore, profileStore: ProfileStore) {
+    init(repository: any ChatsRepository, locationStore: ChatLocationSharingStore, profileStore: ProfileStore) {
+        self.repository = repository
         self.locationStore = locationStore
         self.profileStore = profileStore
         super.init(nibName: nil, bundle: nil)
@@ -68,11 +100,15 @@ final class ChatsViewController: UIViewController {
         configureNavigationItem()
         configureCollectionView()
         configureDataSource()
-        applySnapshot(animated: false)
+        reload()
 
         locationStore.objectWillChange
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.reconfigureVisibleChats() }
+            .sink { [weak self] _ in self?.reconfigureAllChats() }
+            .store(in: &cancellables)
+        repository.events
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in self?.handle(event) }
             .store(in: &cancellables)
     }
 
@@ -82,14 +118,36 @@ final class ChatsViewController: UIViewController {
     }
 
     override func updateContentUnavailableConfiguration(using state: UIContentUnavailableConfigurationState) {
-        guard !query.isEmpty, filteredChats.isEmpty else {
+        guard chats.isEmpty else {
             contentUnavailableConfiguration = nil
             return
         }
-        var configuration = UIContentUnavailableConfiguration.search()
-        configuration.text = "Ничего не найдено"
-        configuration.secondaryText = "Попробуйте изменить запрос"
-        contentUnavailableConfiguration = configuration
+
+        switch loadState {
+        case .loading:
+            contentUnavailableConfiguration = UIContentUnavailableConfiguration.loading()
+        case .failed(let message):
+            var configuration = UIContentUnavailableConfiguration.empty()
+            configuration.image = UIImage(systemName: "wifi.exclamationmark")
+            configuration.text = "Не удалось загрузить чаты"
+            configuration.secondaryText = message
+            var button = UIButton.Configuration.borderedProminent()
+            button.title = "Повторить"
+            configuration.button = button
+            configuration.buttonProperties.primaryAction = UIAction { [weak self] _ in self?.reload() }
+            contentUnavailableConfiguration = configuration
+        case .idle where !query.isEmpty:
+            var configuration = UIContentUnavailableConfiguration.search()
+            configuration.text = "Ничего не найдено"
+            configuration.secondaryText = "Попробуйте изменить запрос"
+            contentUnavailableConfiguration = configuration
+        case .idle:
+            var configuration = UIContentUnavailableConfiguration.empty()
+            configuration.image = UIImage(systemName: "bubble.left.and.bubble.right")
+            configuration.text = "Пока нет чатов"
+            configuration.secondaryText = "Напишите первым — кнопка справа вверху"
+            contentUnavailableConfiguration = configuration
+        }
     }
 
     // MARK: - Настройка
@@ -128,40 +186,162 @@ final class ChatsViewController: UIViewController {
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+
+        if repository.isRemote {
+            let refreshControl = UIRefreshControl()
+            refreshControl.addAction(UIAction { [weak self] _ in self?.reload() }, for: .valueChanged)
+            collectionView.refreshControl = refreshControl
+        }
     }
 
     private func configureDataSource() {
         let cellRegistration = UICollectionView.CellRegistration<ChatListCell, ChatPreview.ID> { [weak self] cell, _, chatID in
-            guard let self, let chat = self.chat(with: chatID) else { return }
-            cell.configure(with: chat, sharesLocation: !self.locationStore.shares(in: chat.id).isEmpty)
+            guard let self, let chat = self.renderedChats[chatID] else { return }
+            let sharesLocation = chat.sharesLocation || !self.locationStore.shares(in: chat.id).isEmpty
+            cell.configure(with: chat, sharesLocation: sharesLocation)
         }
         dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { collectionView, indexPath, chatID in
             collectionView.dequeueConfiguredReusableCell(using: cellRegistration, for: indexPath, item: chatID)
         }
     }
 
-    // MARK: - Данные
+    // MARK: - Загрузка
 
-    private func chat(with id: ChatPreview.ID) -> ChatPreview? {
-        chats.first { $0.id == id }
+    /// Первая страница: при открытии, поиске, pull-to-refresh и после переподключения.
+    private func reload(debounced: Bool = false) {
+        reloadTask?.cancel()
+        loadMoreTask?.cancel()
+        loadMoreTask = nil
+        if chats.isEmpty {
+            loadState = .loading
+            setNeedsUpdateContentUnavailableConfiguration()
+        }
+
+        let query = query
+        reloadTask = Task { [weak self] in
+            if debounced {
+                try? await Task.sleep(for: Self.searchDebounce)
+            }
+            guard let self, !Task.isCancelled else { return }
+            do {
+                let page = try await self.repository.chats(query: query, cursor: nil)
+                guard !Task.isCancelled else { return }
+                self.chats = Self.uniqued(page.items)
+                self.nextCursor = page.nextCursor
+                self.loadState = .idle
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.loadState = .failed(error.localizedDescription)
+                if !self.chats.isEmpty {
+                    self.presentError(error)
+                }
+            }
+            self.collectionView.refreshControl?.endRefreshing()
+            self.applySnapshot(animated: true)
+        }
     }
+
+    private func loadMoreIfNeeded(at indexPath: IndexPath) {
+        guard indexPath.item >= chats.count - Self.prefetchDistance,
+              let cursor = nextCursor, loadMoreTask == nil else { return }
+
+        let query = query
+        loadMoreTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.loadMoreTask = nil }
+            guard let page = try? await self.repository.chats(query: query, cursor: cursor),
+                  !Task.isCancelled else { return }
+            self.chats = Self.uniqued(self.chats + page.items)
+            self.nextCursor = page.nextCursor
+            self.applySnapshot(animated: false)
+        }
+    }
+
+    // MARK: - События
+
+    private func handle(_ event: ChatEvent) {
+        switch event {
+        case .chatUpdated(let chat):
+            if let index = chats.firstIndex(where: { $0.id == chat.id }) {
+                chats.remove(at: index)
+                chats.insert(chat, at: 0)
+            } else if query.isEmpty {
+                chats.insert(chat, at: 0)
+            }
+            applySnapshot(animated: true)
+
+        case .messageCreated(let message, let chatID):
+            guard let index = chats.firstIndex(where: { $0.id == chatID }) else {
+                // Сообщение в чате, которого ещё нет в списке, — например, новый чат.
+                if query.isEmpty { reload() }
+                return
+            }
+            var chat = chats.remove(at: index)
+            let text = Self.previewText(for: message)
+            chat.subtitle = message.isMine ? "Вы: \(text)" : text
+            chat.time = ChatDateFormatting.listTime(message.sentAt)
+            if !message.isMine && openedChatID != chatID {
+                chat.unread += 1
+            }
+            chats.insert(chat, at: 0)
+            applySnapshot(animated: true)
+
+        case .resync:
+            reload()
+
+        case .messageDeleted, .readStateUpdated:
+            break
+        }
+    }
+
+    private func markChatRead(_ chatID: String) {
+        guard let index = chats.firstIndex(where: { $0.id == chatID }), chats[index].unread > 0 else { return }
+        chats[index].unread = 0
+        applySnapshot(animated: false)
+    }
+
+    // MARK: - Снимок
 
     private func applySnapshot(animated: Bool) {
         var snapshot = NSDiffableDataSourceSnapshot<Section, ChatPreview.ID>()
         snapshot.appendSections([.main])
-        snapshot.appendItems(filteredChats.map(\.id))
+        snapshot.appendItems(chats.map(\.id))
+
+        let changedIDs = chats.compactMap { chat -> ChatPreview.ID? in
+            guard let rendered = renderedChats[chat.id], rendered != chat else { return nil }
+            return chat.id
+        }
+        snapshot.reconfigureItems(changedIDs)
+        renderedChats = Dictionary(chats.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
         dataSource.apply(snapshot, animatingDifferences: animated)
         setNeedsUpdateContentUnavailableConfiguration()
     }
 
     /// Обновляет значки геопозиции без пересоздания ячеек.
-    private func reconfigureVisibleChats() {
+    private func reconfigureAllChats() {
         var snapshot = dataSource.snapshot()
         snapshot.reconfigureItems(snapshot.itemIdentifiers)
         dataSource.apply(snapshot, animatingDifferences: false)
     }
 
+    private static func uniqued(_ chats: [ChatPreview]) -> [ChatPreview] {
+        var seen = Set<ChatPreview.ID>()
+        return chats.filter { seen.insert($0.id).inserted }
+    }
+
+    private static func previewText(for message: ChatMessage) -> String {
+        switch message.kind {
+        case .text(let text): return text
+        case .location: return "Геопозиция"
+        }
+    }
+
     // MARK: - Навигация
+
+    private var openedChatID: String? {
+        (navigationController?.topViewController as? ChatViewController)?.chatID
+    }
 
     private func presentNewChat() {
         let controller = UIHostingController(
@@ -172,8 +352,20 @@ final class ChatsViewController: UIViewController {
     }
 
     private func openChat(_ chat: ChatPreview) {
-        let controller = ChatViewController(chat: chat, locationStore: locationStore, profileStore: profileStore)
+        let controller = ChatViewController(
+            chat: chat,
+            repository: repository,
+            locationStore: locationStore,
+            profileStore: profileStore
+        )
+        controller.onRead = { [weak self] chatID in self?.markChatRead(chatID) }
         navigationController?.pushViewController(controller, animated: true)
+    }
+
+    private func presentError(_ error: Error) {
+        let alert = UIAlertController(title: "Чаты", message: error.localizedDescription, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Понятно", style: .cancel))
+        present(alert, animated: true)
     }
 
     private func deselectSelectedChat(animated: Bool) {
@@ -194,8 +386,12 @@ final class ChatsViewController: UIViewController {
 
 extension ChatsViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        guard let chatID = dataSource.itemIdentifier(for: indexPath), let chat = chat(with: chatID) else { return }
+        guard let chatID = dataSource.itemIdentifier(for: indexPath), let chat = renderedChats[chatID] else { return }
         openChat(chat)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+        loadMoreIfNeeded(at: indexPath)
     }
 }
 
@@ -204,7 +400,7 @@ extension ChatsViewController: UISearchResultsUpdating {
         let newQuery = (searchController.searchBar.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard newQuery != query else { return }
         query = newQuery
-        applySnapshot(animated: true)
+        reload(debounced: repository.isRemote)
     }
 }
 
@@ -231,7 +427,7 @@ private final class ChatListCell: UICollectionViewListCell {
     }
 
     func configure(with chat: ChatPreview, sharesLocation: Bool) {
-        avatarView.configure(imageName: chat.avatarImage, initials: chat.initials)
+        avatarView.configure(imageName: chat.avatarImage, imageURL: chat.avatarURL, initials: chat.initials)
         avatarBadge.isHidden = !sharesLocation
         titleLabel.text = chat.title
         subtitleIcon.isHidden = !sharesLocation

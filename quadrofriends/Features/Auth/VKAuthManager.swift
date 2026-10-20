@@ -35,7 +35,8 @@ final class VKAuthManager: ObservableObject {
         isConfigured && VKID.shared.currentAuthorizedSession != nil
     }
 
-    func authorize(onSuccess: @escaping () -> Void) {
+    /// Передаёт в `onSuccess` access token VK ID для обмена на сессию backend (`POST /sessions`).
+    func authorize(onSuccess: @escaping (String) -> Void) {
         guard isConfigured else {
             showError("Для входа нужны ID приложения VK, защищённый ключ и адрес возврата. Пока можно открыть деморежим.")
             return
@@ -52,8 +53,8 @@ final class VKAuthManager: ObservableObject {
         VKID.shared.authorize(using: .uiViewController(controller)) { [weak self] result in
             DispatchQueue.main.async {
                 do {
-                    _ = try result.get()
-                    onSuccess()
+                    let session = try result.get()
+                    onSuccess(session.accessToken.value)
                 } catch AuthError.cancelled {
                     // Пользователь закрыл окно входа.
                 } catch {
@@ -73,7 +74,7 @@ final class VKAuthManager: ObservableObject {
         VKID.shared.currentAuthorizedSession?.logout { _ in }
     }
 
-    private func showError(_ message: String) {
+    func showError(_ message: String) {
         errorMessage = message
         showingError = true
     }

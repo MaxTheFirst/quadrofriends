@@ -32,8 +32,9 @@ final class ChatMessageCell: UICollectionViewCell {
     func configure(with message: ChatMessage) {
         authorLabel.text = message.author
         authorLabel.isHidden = message.isMine
-        timeLabel.text = message.time
-        checkmarkView.isHidden = !message.isMine
+        timeLabel.text = message.status == .failed ? "Не отправлено" : message.time
+        timeLabel.textColor = message.status == .failed ? .systemRed : .secondaryLabel
+        configureStatusIcon(for: message)
         bubbleView.backgroundColor = message.isMine ? UIColor.brandOlive.withAlphaComponent(0.14) : .surfaceCream
 
         let content: String
@@ -56,7 +57,41 @@ final class ChatMessageCell: UICollectionViewCell {
         NSLayoutConstraint.activate(message.isMine ? outgoingConstraints : incomingConstraints)
 
         let author = message.isMine ? "Вы" : message.author
-        accessibilityLabel = "\(author): \(content), \(message.time)"
+        let status = Self.statusDescription(message.status).map { ", \($0)" } ?? ""
+        accessibilityLabel = "\(author): \(content), \(message.time)\(status)"
+        accessibilityHint = message.status == .failed ? "Нажмите, чтобы отправить ещё раз" : nil
+    }
+
+    private func configureStatusIcon(for message: ChatMessage) {
+        guard message.isMine, let status = message.status else {
+            checkmarkView.isHidden = true
+            return
+        }
+        checkmarkView.isHidden = false
+        switch status {
+        case .sending:
+            checkmarkView.image = UIImage(systemName: "clock")
+            checkmarkView.tintColor = .secondaryLabel
+        case .sent:
+            checkmarkView.image = UIImage(systemName: "checkmark")
+            checkmarkView.tintColor = .brandOlive
+        case .read:
+            checkmarkView.image = UIImage(systemName: "checkmark.circle.fill")
+            checkmarkView.tintColor = .brandOlive
+        case .failed:
+            checkmarkView.image = UIImage(systemName: "exclamationmark.circle.fill")
+            checkmarkView.tintColor = .systemRed
+        }
+    }
+
+    private static func statusDescription(_ status: ChatMessage.DeliveryStatus?) -> String? {
+        switch status {
+        case .sending: return "отправляется"
+        case .sent: return "отправлено"
+        case .read: return "прочитано"
+        case .failed: return "не отправлено"
+        case nil: return nil
+        }
     }
 
     override func preferredLayoutAttributesFitting(

@@ -52,6 +52,13 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+    <key>API_BASE_URL</key>
+    <string>$(API_BASE_URL)</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>VK_CLIENT_ID</key>
     <string>$(VK_CLIENT_ID)</string>
     <key>VK_CLIENT_SECRET</key>

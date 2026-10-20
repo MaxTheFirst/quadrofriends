@@ -23,6 +23,7 @@ final class ChatAvatarView: UIView {
     private let size: CGFloat
     private let imageView = UIImageView()
     private let initialsLabel = UILabel(textStyle: .headline, color: .brandOlive)
+    private var imageTask: Task<Void, Never>?
 
     init(size: CGFloat) {
         self.size = size
@@ -64,10 +65,22 @@ final class ChatAvatarView: UIView {
         CGSize(width: size, height: size)
     }
 
-    func configure(imageName: String?, initials: String) {
-        imageView.image = imageName.flatMap { UIImage(named: $0) }
-        imageView.isHidden = imageView.image == nil
+    /// Картинка из ассетов, по URL (с сервера) или инициалы, пока картинки нет.
+    func configure(imageName: String?, imageURL: URL? = nil, initials: String) {
+        imageTask?.cancel()
         initialsLabel.text = initials
-        initialsLabel.isHidden = !imageView.isHidden
+        setImage(imageName.flatMap { UIImage(named: $0) } ?? imageURL.flatMap { RemoteImageLoader.shared.cachedImage(for: $0) })
+
+        guard imageView.image == nil, let imageURL else { return }
+        imageTask = Task { [weak self] in
+            guard let image = await RemoteImageLoader.shared.image(for: imageURL), !Task.isCancelled else { return }
+            self?.setImage(image)
+        }
+    }
+
+    private func setImage(_ image: UIImage?) {
+        imageView.image = image
+        imageView.isHidden = image == nil
+        initialsLabel.isHidden = image != nil
     }
 }

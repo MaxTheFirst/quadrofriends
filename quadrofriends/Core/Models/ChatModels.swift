@@ -1,14 +1,16 @@
 import Foundation
 import CoreLocation
 
-struct ChatPreview: Identifiable {
+struct ChatPreview: Identifiable, Equatable {
     let id: String
-    let title: String
-    let subtitle: String
-    let time: String
-    let unread: Int
-    let avatarImage: String?
-    let initials: String
+    var title: String
+    var subtitle: String
+    var time: String
+    var unread: Int
+    var avatarImage: String?
+    var initials: String
+    var avatarURL: URL? = nil
+    var sharesLocation = false
 }
 
 struct ChatLiveLocation: Identifiable {
@@ -25,15 +27,56 @@ struct ChatLiveLocation: Identifiable {
     let isDemo: Bool
 }
 
-enum ChatMessageKind {
+enum ChatMessageKind: Equatable {
     case text(String)
     case location(CLLocationCoordinate2D)
+
+    static func == (lhs: ChatMessageKind, rhs: ChatMessageKind) -> Bool {
+        switch (lhs, rhs) {
+        case let (.text(left), .text(right)):
+            return left == right
+        case let (.location(left), .location(right)):
+            return left.latitude == right.latitude && left.longitude == right.longitude
+        default:
+            return false
+        }
+    }
 }
 
-struct ChatMessage: Identifiable {
-    let id = UUID()
+struct ChatMessage: Identifiable, Equatable {
+    /// Статус своего сообщения.
+    enum DeliveryStatus: Equatable {
+        case sending
+        case sent
+        case read
+        case failed
+    }
+
+    /// Серверный ID или, пока сообщение не отправлено, локальный `Idempotency-Key`.
+    let id: String
     let author: String
     let isMine: Bool
-    let time: String
-    let kind: ChatMessageKind
+    let sentAt: Date
+    var kind: ChatMessageKind
+    var status: DeliveryStatus?
+
+    init(
+        id: String = UUID().uuidString,
+        author: String,
+        isMine: Bool,
+        sentAt: Date,
+        kind: ChatMessageKind,
+        status: DeliveryStatus? = nil
+    ) {
+        self.id = id
+        self.author = author
+        self.isMine = isMine
+        self.sentAt = sentAt
+        self.kind = kind
+        self.status = status
+    }
+
+    var time: String {
+        sentAt.formatted(date: .omitted, time: .shortened)
+    }
 }

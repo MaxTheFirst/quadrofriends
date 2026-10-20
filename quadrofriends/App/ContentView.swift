@@ -9,6 +9,8 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var chatLocationStore: ChatLocationSharingStore
+    @EnvironmentObject private var apiSession: APISession
+    @EnvironmentObject private var realtime: RealtimeClient
     @Environment(\.scenePhase) private var scenePhase
     @State private var selection = 0
     @AppStorage("appTheme") private var appTheme = AppTheme.system
@@ -40,16 +42,43 @@ struct ContentView: View {
         }
         .tint(Color.brandOlive)
         .preferredColorScheme(appTheme.colorScheme)
-        .onAppear { chatLocationStore.setDemoDataEnabled(sessionKind == "demo") }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { chatLocationStore.removeExpiredShares() }
+        .onAppear {
+            chatLocationStore.setDemoDataEnabled(sessionKind == "demo")
+            chatLocationStore.connect(
+                session: usesBackend ? apiSession : nil,
+                realtime: usesBackend ? realtime : nil
+            )
+            if usesBackend { realtime.start() }
         }
+        .onDisappear {
+            realtime.stop()
+            chatLocationStore.connect(session: nil, realtime: nil)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                chatLocationStore.removeExpiredShares()
+                if usesBackend { realtime.start() }
+            case .background:
+                // В фоне WebSocket не держим: новые сообщения придут push-уведомлением.
+                realtime.stop()
+            default:
+                break
+            }
+        }
+    }
+
+    private var usesBackend: Bool {
+        sessionKind == "vk" && apiSession.isAuthorized
     }
 }
 
 #Preview {
+    let session = APISession()
     ContentView()
         .environmentObject(ProfileStore())
         .environmentObject(VKAuthManager())
         .environmentObject(ChatLocationSharingStore())
+        .environmentObject(session)
+        .environmentObject(RealtimeClient(session: session))
 }
