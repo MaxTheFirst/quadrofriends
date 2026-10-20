@@ -11,7 +11,7 @@ enum HTTPMethod: String {
 /// Описание одного вызова REST API с типом ожидаемого ответа.
 struct APIRequest<Response: Decodable> {
     var method: HTTPMethod
-    /// Путь относительно `/v1`, например `chats/{id}/messages`.
+    /// Путь относительно базового адреса (`…/api`), например `chats/{id}/messages`.
     var path: String
     var query: [URLQueryItem] = []
     var body: (any Encodable)?
@@ -121,16 +121,29 @@ final class APIClient {
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let string = try container.decode(String.self)
-            // Сервер может присылать время как с долями секунды, так и без них.
-            if let date = try? Date(string, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)) {
-                return date
+            guard let date = APIClient.parseISO8601(string) else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Неверная дата: \(string)")
             }
-            if let date = try? Date(string, strategy: Date.ISO8601FormatStyle()) {
-                return date
-            }
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Неверная дата: \(string)")
+            return date
         }
         return decoder
+    }
+
+    /// Java `Instant` приходит с 0–9 знаками после секунды (`…:00Z`, `…:00.123456Z`).
+    /// Дробную часть приводим к миллисекундам: их формат ISO 8601 разбирает надёжно.
+    nonisolated static func parseISO8601(_ string: String) -> Date? {
+        var normalized = string
+        if let dot = string.firstIndex(of: "."),
+           let zoneStart = string[dot...].firstIndex(where: { $0 == "Z" || $0 == "+" || $0 == "-" }) {
+            let digits = string[string.index(after: dot)..<zoneStart]
+            let milliseconds = String(digits.prefix(3)).padding(toLength: 3, withPad: "0", startingAt: 0)
+            normalized = String(string[..<dot]) + "." + milliseconds + String(string[zoneStart...])
+        }
+
+        if let date = try? Date(normalized, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)) {
+            return date
+        }
+        return try? Date(normalized, strategy: Date.ISO8601FormatStyle())
     }
 
     static func makeEncoder() -> JSONEncoder {

@@ -2,11 +2,11 @@ import Foundation
 
 /// Адрес backend. Задаётся build setting `API_BASE_URL`, который подставляется в `Info.plist`.
 struct APIConfiguration {
-    static let fallbackBaseURL = URL(string: "https://api.quadro.friends/v1")!
+    static let fallbackBaseURL = URL(string: "https://api.quadro.friends/api")!
 
     let baseURL: URL
 
-    /// `wss://…/v1/realtime` для `https`, `ws://…/v1/realtime` для локального `http`.
+    /// `wss://…/api/realtime` для `https`, `ws://…/api/realtime` для локального `http`.
     var realtimeURL: URL {
         var components = URLComponents(url: baseURL.appending(path: "realtime"), resolvingAgainstBaseURL: false)!
         components.scheme = baseURL.scheme == "http" ? "ws" : "wss"

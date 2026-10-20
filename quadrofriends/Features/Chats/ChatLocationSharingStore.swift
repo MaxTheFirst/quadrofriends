@@ -7,6 +7,7 @@ final class ChatLocationSharingStore: NSObject, ObservableObject, CLLocationMana
     /// Сервер принимает позиции не чаще одного раза в 5 секунд на передачу.
     private static let positionInterval: TimeInterval = 5
     private static let shareDuration: TimeInterval = 3600
+    private static let maxPositionAccuracy: CLLocationAccuracy = 100
 
     @Published private(set) var sharesByChat: [String: [ChatLiveLocation]] = [:]
     @Published private(set) var pendingChatIDs: Set<String> = []
@@ -206,7 +207,10 @@ final class ChatLocationSharingStore: NSObject, ObservableObject, CLLocationMana
                     return
                 }
                 self.remoteShareIDs[chatID] = share.id
-                _ = try? await api.sendPosition(shareID: share.id, Self.position(from: location))
+                if let position = Self.position(from: location) {
+                    self.lastPositionSentAt = Date()
+                    _ = try? await api.sendPosition(shareID: share.id, position)
+                }
             } catch {
                 guard let self else { return }
                 self.removeOwnShare(in: chatID)
@@ -218,9 +222,9 @@ final class ChatLocationSharingStore: NSObject, ObservableObject, CLLocationMana
 
     private func sendPositionIfNeeded(_ location: CLLocation) {
         guard let api, !remoteShareIDs.isEmpty,
-              Date().timeIntervalSince(lastPositionSentAt) >= Self.positionInterval else { return }
+              Date().timeIntervalSince(lastPositionSentAt) >= Self.positionInterval,
+              let position = Self.position(from: location) else { return }
         lastPositionSentAt = Date()
-        let position = Self.position(from: location)
         for shareID in Set(remoteShareIDs.values) {
             Task { _ = try? await api.sendPosition(shareID: shareID, position) }
         }
@@ -242,10 +246,12 @@ final class ChatLocationSharingStore: NSObject, ObservableObject, CLLocationMana
         )
     }
 
-    private static func position(from location: CLLocation) -> LocationPositionWriteDTO {
-        LocationPositionWriteDTO(
+    /// Сервер принимает `accuracy_m` от 0 до 100: более грубые точки пропускаем до следующего обновления GPS.
+    private static func position(from location: CLLocation) -> LocationPositionWriteDTO? {
+        guard (0...maxPositionAccuracy).contains(location.horizontalAccuracy) else { return nil }
+        return LocationPositionWriteDTO(
             coordinate: CoordinateDTO(location.coordinate),
-            accuracyM: max(location.horizontalAccuracy, 0),
+            accuracyM: location.horizontalAccuracy,
             recordedAt: location.timestamp
         )
     }

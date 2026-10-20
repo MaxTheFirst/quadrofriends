@@ -4,12 +4,22 @@
 
 ## Адрес сервера
 
-Адрес задаётся build setting `API_BASE_URL` (Target → Build Settings → User-Defined) для Debug и Release и попадает в `Info.plist`. По умолчанию — `https://api.quadro.friends/v1`.
+Адрес задаётся build setting `API_BASE_URL` (Target → Build Settings → User-Defined) и попадает в `Info.plist`. Backend ([quadrofriends-back](https://github.com/MaxTheFirst/quadrofriends-back)) публикует ручки под префиксом `/api`, а не `/v1` из спецификации.
 
-- Симулятор и сервер на том же Mac: `http://localhost:8080/v1`.
-- iPhone и сервер в одной сети: `http://<имя-mac>.local:8080/v1`. `NSAllowsLocalNetworking` в `Info.plist` разрешает HTTP только для локальной сети, остальные адреса требуют HTTPS.
+- Debug по умолчанию: `http://localhost:8080/api` — симулятор и сервер на одном Mac.
+- iPhone и сервер в одной сети: `http://<имя-mac>.local:8080/api`. `NSAllowsLocalNetworking` в `Info.plist` разрешает HTTP только для локальной сети, остальные адреса требуют HTTPS.
+- Release: `https://api.quadro.friends/api` — заменить на реальный адрес, когда сервер будет развёрнут.
 
-WebSocket строится из того же адреса: `…/v1/realtime`, схема `ws` для `http` и `wss` для `https`.
+WebSocket строится из того же адреса: `…/api/realtime`, схема `ws` для `http` и `wss` для `https`.
+
+Для входа через VK на сервере должен быть задан `VK_CLIENT_ID` (`.env`). Swagger с профилем `debug`: `http://localhost:8080/external/swagger-ui.html`.
+
+### Особенности сервера
+
+- Неизвестные поля в JSON отклоняются (`fail-on-unknown-properties`): клиент отправляет только поля из DTO и не кодирует `nil`.
+- `Idempotency-Key` должен быть UUID.
+- Время приходит с микросекундами (`…:00.123456Z`); `APIClient.parseISO8601` приводит дробную часть к миллисекундам.
+- `accuracy_m` позиции — от 0 до 100 м; более грубые точки GPS не отправляются.
 
 ## Вход
 
