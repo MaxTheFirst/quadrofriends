@@ -27,7 +27,7 @@ struct ChatLiveLocation: Identifiable {
 
 enum ChatMessageKind {
     case text(String)
-    case location
+    case location(CLLocationCoordinate2D)
 }
 
 struct ChatMessage: Identifiable {

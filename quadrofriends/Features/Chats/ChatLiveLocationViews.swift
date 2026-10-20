@@ -1,69 +1,6 @@
 import MapKit
 import SwiftUI
 
-struct ChatLocationStatusBanner: View {
-    let shares: [ChatLiveLocation]
-    let openMap: () -> Void
-    let stopSharing: () -> Void
-
-    private var ownShare: ChatLiveLocation? { shares.first(where: \.isMine) }
-    private var otherShares: [ChatLiveLocation] { shares.filter { !$0.isMine } }
-
-    private var title: String {
-        if ownShare != nil {
-            return otherShares.isEmpty
-                ? "Вы делитесь геопозицией"
-                : "Вы и другие участники делитесь геопозицией"
-        }
-        if otherShares.count == 1 {
-            return "\(otherShares[0].name) делится геопозицией"
-        }
-        return "\(otherShares.count) участников делятся геопозицией"
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "location.fill")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Color.white)
-                    .frame(width: 34, height: 34)
-                    .background(Color.brandOlive, in: Circle())
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.subheadline.weight(.semibold))
-                    Text(ownShare == nil
-                         ? "Местоположение видно участникам этого чата"
-                         : "Ваше местоположение видно всем участникам чата")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                if shares.contains(where: \.isDemo) {
-                    Text("Демо")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(Color.brandOlive)
-                }
-            }
-
-            HStack(spacing: 16) {
-                Button("Открыть карту", systemImage: "map", action: openMap)
-                if ownShare != nil {
-                    Button("Остановить", systemImage: "stop.circle", action: stopSharing)
-                        .foregroundStyle(.red)
-                }
-            }
-            .font(.caption.weight(.semibold))
-            .buttonStyle(.plain)
-            .padding(.leading, 44)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.brandOlive.opacity(0.11), in: RoundedRectangle(cornerRadius: 16))
-    }
-}
-
 struct ChatLocationConsentView: View {
     let chatTitle: String
     let startSharing: () -> Void

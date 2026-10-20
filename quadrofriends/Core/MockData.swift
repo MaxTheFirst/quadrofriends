@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 
 enum MockData {
@@ -112,4 +113,15 @@ enum MockData {
         ChatPreview(id: "dmitry", title: "Дмитрий", subtitle: "Я на месте", time: "Пн", unread: 0, avatarImage: nil, initials: "Д")
     ]
 
+    static let chatMessages: [ChatMessage] = [
+        ChatMessage(author: "Иван Петров", isMine: false, time: "09:15", kind: .text("Кто на покатушку в эти выходные?")),
+        ChatMessage(author: "Вы", isMine: true, time: "09:17", kind: .text("Я в деле! Куда едем?")),
+        ChatMessage(author: "Алексей Смирнов", isMine: false, time: "09:18", kind: .text("Вот координаты старта")),
+        ChatMessage(
+            author: "Алексей Смирнов",
+            isMine: false,
+            time: "09:18",
+            kind: .location(CLLocationCoordinate2D(latitude: 59.980, longitude: 30.262))
+        )
+    ]
 }

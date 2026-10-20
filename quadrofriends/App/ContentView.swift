@@ -29,9 +29,7 @@ struct ContentView: View {
             }
 
             Tab("Чаты", systemImage: "bubble.left.and.bubble.right.fill", value: 2) {
-                NavigationStack {
-                    ChatsView()
-                }
+                ChatsTab()
             }
 
             Tab("Профиль", systemImage: "person.crop.circle.fill", value: 3) {
