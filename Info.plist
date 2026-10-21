@@ -12,29 +12,14 @@
     <string>6.0</string>
     <key>CFBundleName</key>
     <string>$(PRODUCT_NAME)</string>
+    <key>CFBundleDisplayName</key>
+    <string>$(APP_DISPLAY_NAME)</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
-    <key>CFBundleURLTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeRole</key>
-            <string>Editor</string>
-            <key>CFBundleURLName</key>
-            <string>auth_callback</string>
-            <key>CFBundleURLSchemes</key>
-            <array>
-                <string>vk$(VK_CLIENT_ID)</string>
-            </array>
-        </dict>
-    </array>
-    <key>LSApplicationQueriesSchemes</key>
-    <array>
-        <string>vkauthorize-silent</string>
-    </array>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>Геопозиция нужна, чтобы показывать ваше местоположение участникам выбранного чата, пока вы делитесь им.</string>
     <key>UILaunchScreen</key>
@@ -59,9 +44,5 @@
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
-    <key>VK_CLIENT_ID</key>
-    <string>$(VK_CLIENT_ID)</string>
-    <key>VK_CLIENT_SECRET</key>
-    <string>$(VK_CLIENT_SECRET)</string>
 </dict>
 </plist>

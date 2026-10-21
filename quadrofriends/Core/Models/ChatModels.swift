@@ -1,5 +1,6 @@
 import Foundation
 import CoreLocation
+import UIKit
 
 struct ChatPreview: Identifiable, Equatable {
     let id: String
@@ -29,12 +30,15 @@ struct ChatLiveLocation: Identifiable {
 
 enum ChatMessageKind: Equatable {
     case text(String)
+    case photo(URL?, UIImage?, String?)
     case location(CLLocationCoordinate2D)
 
     static func == (lhs: ChatMessageKind, rhs: ChatMessageKind) -> Bool {
         switch (lhs, rhs) {
         case let (.text(left), .text(right)):
             return left == right
+        case let (.photo(leftURL, leftImage, leftCaption), .photo(rightURL, rightImage, rightCaption)):
+            return leftURL == rightURL && leftImage === rightImage && leftCaption == rightCaption
         case let (.location(left), .location(right)):
             return left.latitude == right.latitude && left.longitude == right.longitude
         default:

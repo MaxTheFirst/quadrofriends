@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 enum HTTPMethod: String {
     case get = "GET"
@@ -15,6 +16,7 @@ struct APIRequest<Response: Decodable> {
     var path: String
     var query: [URLQueryItem] = []
     var body: (any Encodable)?
+    var multipartFile: Data?
     /// Для повторяемых `POST`: повтор с тем же ключом вернёт тот же результат.
     var idempotencyKey: String?
     var requiresAuth = true
@@ -36,13 +38,40 @@ final class APIClient {
     private let decoder = APIClient.makeDecoder()
     private let encoder = APIClient.makeEncoder()
 
-    init(configuration: APIConfiguration = .current, urlSession: URLSession = .shared) {
-        self.configuration = configuration
+    init(configuration: APIConfiguration? = nil, urlSession: URLSession = .shared) {
+        self.configuration = configuration ?? .current
         self.urlSession = urlSession
     }
 
     func send<Response: Decodable>(_ request: APIRequest<Response>) async throws -> Response {
         try await perform(request, retryingUnauthorized: true)
+    }
+
+    func uploadImage(_ image: UIImage) async throws -> MediaDTO {
+        let longestSide = max(image.size.width, image.size.height)
+        let scale = longestSide > 2_048 ? 2_048 / longestSide : 1
+        let prepared: UIImage
+        if scale < 1 {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            prepared = UIGraphicsImageRenderer(
+                size: CGSize(width: image.size.width * scale, height: image.size.height * scale),
+                format: format
+            ).image { _ in image.draw(in: CGRect(origin: .zero, size: CGSize(
+                width: image.size.width * scale, height: image.size.height * scale
+            ))) }
+        } else {
+            prepared = image
+        }
+        guard let data = prepared.jpegData(compressionQuality: 0.82), data.count <= 20_000_000 else {
+            throw APIError.invalidResponse
+        }
+        return try await send(APIRequest(
+            method: .post,
+            path: "media",
+            multipartFile: data,
+            idempotencyKey: UUID().uuidString
+        ))
     }
 
     private func perform<Response: Decodable>(
@@ -102,7 +131,14 @@ final class APIClient {
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method.rawValue
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let body = request.body {
+        if let file = request.multipartFile {
+            let boundary = "Boundary-\(UUID().uuidString)"
+            var data = Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"photo.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n".utf8)
+            data.append(file)
+            data.append(Data("\r\n--\(boundary)--\r\n".utf8))
+            urlRequest.httpBody = data
+            urlRequest.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        } else if let body = request.body {
             urlRequest.httpBody = try encoder.encode(body)
             let contentType = request.method == .patch ? "application/merge-patch+json" : "application/json; charset=utf-8"
             urlRequest.setValue(contentType, forHTTPHeaderField: "Content-Type")

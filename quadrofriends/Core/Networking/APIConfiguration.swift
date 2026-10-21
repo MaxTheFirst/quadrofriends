@@ -2,7 +2,7 @@ import Foundation
 
 /// Адрес backend. Задаётся build setting `API_BASE_URL`, который подставляется в `Info.plist`.
 struct APIConfiguration {
-    static let fallbackBaseURL = URL(string: "https://api.quadro.friends/api")!
+    static let fallbackBaseURL = URL(string: "https://api.pdfshare.ru/api")!
 
     let baseURL: URL
 

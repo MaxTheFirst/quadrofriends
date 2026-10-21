@@ -10,7 +10,6 @@ import SwiftUI
 @main
 struct quadrofriendsApp: App {
     @StateObject private var profileStore = ProfileStore()
-    @StateObject private var vkAuth = VKAuthManager()
     @StateObject private var chatLocationStore = ChatLocationSharingStore()
     @StateObject private var apiSession: APISession
     @StateObject private var realtime: RealtimeClient
@@ -25,34 +24,19 @@ struct quadrofriendsApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                // Вход через VK действует, пока жива сессия нашего backend: её отзыв возвращает на экран входа.
-                if sessionKind == "demo" || (sessionKind == "vk" && apiSession.isAuthorized) {
+                if sessionKind == "demo" || apiSession.isAuthorized {
                     ContentView()
                 } else {
                     WelcomeView(
-                        vkAuth: vkAuth,
                         enterDemo: { sessionKind = "demo" },
-                        signInWithVK: {
-                            vkAuth.authorize { vkAccessToken in
-                                Task {
-                                    do {
-                                        try await apiSession.signIn(vkAccessToken: vkAccessToken)
-                                        sessionKind = "vk"
-                                    } catch {
-                                        vkAuth.showError("Не удалось войти: \(error.localizedDescription)")
-                                    }
-                                }
-                            }
-                        }
+                        onAuthenticated: { sessionKind = "account" }
                     )
                 }
             }
             .environmentObject(profileStore)
-            .environmentObject(vkAuth)
             .environmentObject(chatLocationStore)
             .environmentObject(apiSession)
             .environmentObject(realtime)
-            .onOpenURL(perform: vkAuth.handleOpenURL)
         }
     }
 }

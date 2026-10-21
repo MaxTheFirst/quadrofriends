@@ -38,11 +38,21 @@ struct MessageDTO: Decodable {
 struct MessageCreateRequest: Encodable {
     let type: String
     var text: String?
+    var mediaIds: [String]?
+    var routeId: String?
     var coordinate: CoordinateDTO?
     var label: String?
 
     static func text(_ text: String) -> MessageCreateRequest {
         MessageCreateRequest(type: "text", text: text)
+    }
+
+    static func photo(_ mediaID: String) -> MessageCreateRequest {
+        MessageCreateRequest(type: "photo", mediaIds: [mediaID])
+    }
+
+    static func route(_ routeID: String) -> MessageCreateRequest {
+        MessageCreateRequest(type: "route", routeId: routeID)
     }
 
     static func location(_ coordinate: CoordinateDTO, label: String? = nil) -> MessageCreateRequest {

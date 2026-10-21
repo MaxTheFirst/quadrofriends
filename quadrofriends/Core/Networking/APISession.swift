@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-/// Сессия нашего backend: обмен токена VK ID на собственные токены, их хранение в Keychain и ротация.
+/// Сессия backend: вход по email, хранение токенов в Keychain и ротация refresh token.
 @MainActor
 final class APISession: ObservableObject, AccessTokenProvider {
     private struct StoredSession: Codable {
@@ -37,7 +37,8 @@ final class APISession: ObservableObject, AccessTokenProvider {
         return generated
     }()
 
-    init(client: APIClient = APIClient()) {
+    init(client: APIClient? = nil) {
+        let client = client ?? APIClient()
         self.client = client
         let saved = keychain.load()
         stored = saved.flatMap { $0.refreshExpiresAt > Date() ? $0 : nil }
@@ -45,18 +46,34 @@ final class APISession: ObservableObject, AccessTokenProvider {
         client.tokenProvider = self
     }
 
-    /// Вход через VK: `POST /sessions` с `grant_type=vk`.
-    @discardableResult
-    func signIn(vkAccessToken: String) async throws -> Bool {
+    /// Вход по email и паролю.
+    func signIn(email: String, password: String) async throws {
         let session = try await client.send(APIRequest<SessionDTO>(
             method: .post,
             path: "sessions",
-            body: CreateSessionRequest.vk(accessToken: vkAccessToken, deviceID: deviceID),
+            body: CreateSessionRequest.password(email: email, password: password, deviceID: deviceID),
             idempotencyKey: UUID().uuidString,
             requiresAuth: false
         ))
         store(session)
-        return session.isNewUser
+    }
+
+    /// Регистрация сразу выдаёт сессию; подтверждение email не требуется.
+    func register(
+        email: String, password: String, firstName: String, lastName: String,
+        username: String?, birthYear: Int?, city: String?
+    ) async throws {
+        let session = try await client.send(APIRequest<SessionDTO>(
+            method: .post,
+            path: "sessions",
+            body: CreateSessionRequest.register(
+                email: email, password: password, firstName: firstName, lastName: lastName,
+                username: username, birthYear: birthYear, city: city, deviceID: deviceID
+            ),
+            idempotencyKey: UUID().uuidString,
+            requiresAuth: false
+        ))
+        store(session)
     }
 
     /// Выход с устройства: отзыв refresh token на сервере и очистка Keychain.

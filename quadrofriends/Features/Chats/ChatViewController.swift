@@ -1,4 +1,5 @@
 import Combine
+import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -146,8 +147,11 @@ final class ChatViewController: UIViewController {
             primaryAction: UIAction { [weak self] _ in self?.openMemberProfile() },
             menu: nil
         )
+        // Демо-профиль не должен открываться из серверного чата.
         // В UIKit правые кнопки перечисляются справа налево.
-        navigationItem.rightBarButtonItems = [profileBarButton, locationBarButton]
+        navigationItem.rightBarButtonItems = repository.isRemote
+            ? [locationBarButton]
+            : [profileBarButton, locationBarButton]
     }
 
     private static func makeLayout() -> UICollectionViewLayout {
@@ -192,6 +196,7 @@ final class ChatViewController: UIViewController {
         bannerView.translatesAutoresizingMaskIntoConstraints = false
         bannerContainer.addSubview(bannerView)
         bannerView.onOpenMap = { [weak self] in self?.presentLocationMap() }
+        bannerView.onShowParticipants = { [weak self] in self?.presentLocationParticipants() }
         bannerView.onStopSharing = { [weak self] in
             guard let self else { return }
             self.locationStore.stopSharing(in: self.chat.id)
@@ -269,8 +274,12 @@ final class ChatViewController: UIViewController {
             }
             completion([
                 shareLocation,
-                UIAction(title: "Поделиться маршрутом", image: UIImage(systemName: "map")) { _ in },
-                UIAction(title: "Добавить фото", image: UIImage(systemName: "photo")) { _ in }
+                UIAction(title: "Поделиться маршрутом", image: UIImage(systemName: "map")) { [weak self] _ in
+                    self?.presentRoutePicker()
+                },
+                UIAction(title: "Добавить фото", image: UIImage(systemName: "photo")) { [weak self] _ in
+                    self?.presentPhotoPicker()
+                }
             ])
         }
         return UIMenu(children: [items])
@@ -377,6 +386,76 @@ final class ChatViewController: UIViewController {
             self?.scrollToBottom(animated: true)
         }
         deliver(message)
+    }
+
+    private func presentPhotoPicker() {
+        var configuration = PHPickerConfiguration(photoLibrary: .shared())
+        configuration.filter = .images
+        configuration.selectionLimit = 1
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+
+    private func sendPhoto(_ image: UIImage) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let sent = try await self.repository.sendPhoto(
+                    image, chatID: self.chat.id, localID: UUID().uuidString
+                )
+                if !self.messages.contains(where: { $0.id == sent.id }) {
+                    self.messages = Self.sorted(self.messages + [sent])
+                }
+                self.applySnapshot(animated: true, reconfiguring: [sent.id]) { [weak self] in
+                    self?.scrollToBottom(animated: true)
+                }
+            } catch {
+                self.presentSendError(error)
+            }
+        }
+    }
+
+    private func presentRoutePicker() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let routes = try await self.repository.shareableRoutes()
+                let sheet = UIAlertController(title: "Поделиться маршрутом", message: nil, preferredStyle: .actionSheet)
+                for route in routes.prefix(20) {
+                    sheet.addAction(UIAlertAction(title: route.title, style: .default) { [weak self] _ in
+                        self?.sendRoute(route.id)
+                    })
+                }
+                sheet.addAction(UIAlertAction(title: "Отмена", style: .cancel))
+                self.present(sheet, animated: true)
+            } catch {
+                self.presentSendError(error)
+            }
+        }
+    }
+
+    private func sendRoute(_ routeID: String) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let sent = try await self.repository.sendRoute(routeID, chatID: self.chat.id, localID: UUID().uuidString)
+                if !self.messages.contains(where: { $0.id == sent.id }) {
+                    self.messages = Self.sorted(self.messages + [sent])
+                }
+                self.applySnapshot(animated: true, reconfiguring: [sent.id]) { [weak self] in
+                    self?.scrollToBottom(animated: true)
+                }
+            } catch {
+                self.presentSendError(error)
+            }
+        }
+    }
+
+    private func presentSendError(_ error: Error) {
+        let alert = UIAlertController(title: "Не удалось отправить", message: error.localizedDescription, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Понятно", style: .cancel))
+        present(alert, animated: true)
     }
 
     /// Повторная отправка использует тот же `localID`, поэтому сервер не создаст дубликат.
@@ -567,10 +646,14 @@ final class ChatViewController: UIViewController {
     }
 
     private func presentLocationMap() {
-        let mapView = NavigationStack {
-            ChatLiveLocationMapView(chatTitle: chat.title, shares: locationStore.shares(in: chat.id))
-        }
-        present(UIHostingController(rootView: mapView.tint(Color.brandOlive)), animated: true)
+        NotificationCenter.default.post(name: .openMainMap, object: nil)
+    }
+
+    private func presentLocationParticipants() {
+        let participants = ChatLocationParticipantsView(chatID: chat.id, locationStore: locationStore)
+        let controller = UIHostingController(rootView: participants.tint(Color.brandOlive))
+        controller.sheetPresentationController?.detents = [.medium(), .large()]
+        present(controller, animated: true)
     }
 
     private func openMemberProfile() {
@@ -631,5 +714,23 @@ extension ChatViewController: UICollectionViewDelegate {
                 }
             ])
         })
+    }
+}
+
+extension ChatViewController: PHPickerViewControllerDelegate {
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        guard let provider = results.first?.itemProvider,
+              provider.canLoadObject(ofClass: UIImage.self) else { return }
+        provider.loadObject(ofClass: UIImage.self) { [weak self] object, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let image = object as? UIImage {
+                    self.sendPhoto(image)
+                } else if let error {
+                    self.presentSendError(error)
+                }
+            }
+        }
     }
 }

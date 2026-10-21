@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import UIKit
 
 /// Изменения, которые экраны чатов применяют без полной перезагрузки.
 enum ChatEvent {
@@ -9,6 +10,11 @@ enum ChatEvent {
     case readStateUpdated(chatID: String, userID: String, lastReadMessageID: String)
     /// Соединение восстановлено: часть событий могла потеряться, данные нужно перечитать.
     case resync
+}
+
+struct ChatShareableRoute {
+    let id: String
+    let title: String
 }
 
 /// Источник данных экранов чатов: сервер или демонстрационные данные.
@@ -25,6 +31,9 @@ protocol ChatsRepository: AnyObject {
     func messages(chatID: String, cursor: String?) async throws -> Page<ChatMessage>
     /// `localID` используется как `Idempotency-Key`: повтор не создаст второе сообщение.
     func sendText(_ text: String, chatID: String, localID: String) async throws -> ChatMessage
+    func sendPhoto(_ image: UIImage, chatID: String, localID: String) async throws -> ChatMessage
+    func sendRoute(_ routeID: String, chatID: String, localID: String) async throws -> ChatMessage
+    func shareableRoutes() async throws -> [ChatShareableRoute]
     func markRead(chatID: String, messageID: String) async
 }
 
@@ -67,6 +76,25 @@ final class RemoteChatsRepository: ChatsRepository {
     func sendText(_ text: String, chatID: String, localID: String) async throws -> ChatMessage {
         let dto = try await api.sendMessage(chatID: chatID, .text(text), idempotencyKey: localID)
         return message(from: dto)
+    }
+
+    func sendPhoto(_ image: UIImage, chatID: String, localID: String) async throws -> ChatMessage {
+        let media = try await session.client.uploadImage(image)
+        let dto = try await api.sendMessage(chatID: chatID, .photo(media.id), idempotencyKey: localID)
+        return message(from: dto)
+    }
+
+    func sendRoute(_ routeID: String, chatID: String, localID: String) async throws -> ChatMessage {
+        let dto = try await api.sendMessage(chatID: chatID, .route(routeID), idempotencyKey: localID)
+        return message(from: dto)
+    }
+
+    func shareableRoutes() async throws -> [ChatShareableRoute] {
+        let routes = try await ServerRoutesAPI.list(
+            session.client, path: "users/me/routes",
+            query: [URLQueryItem(name: "visibility", value: "public")]
+        )
+        return routes.map { ChatShareableRoute(id: $0.id, title: $0.title) }
     }
 
     func markRead(chatID: String, messageID: String) async {
@@ -128,6 +156,9 @@ final class RemoteChatsRepository: ChatsRepository {
     }
 
     private static func kind(for dto: MessageDTO) -> ChatMessageKind {
+        if dto.type == "photo", dto.deletedAt == nil {
+            return .photo(dto.media?.first?.url, nil, dto.text)
+        }
         if dto.type == "location", dto.deletedAt == nil, let coordinate = dto.coordinate {
             return .location(coordinate.coordinate)
         }
@@ -192,6 +223,18 @@ final class DemoChatsRepository: ChatsRepository {
     func sendText(_ text: String, chatID: String, localID: String) async throws -> ChatMessage {
         try await Task.sleep(for: .milliseconds(300))
         return ChatMessage(id: localID, author: "Вы", isMine: true, sentAt: Date(), kind: .text(text), status: .sent)
+    }
+
+    func sendPhoto(_ image: UIImage, chatID: String, localID: String) async throws -> ChatMessage {
+        ChatMessage(id: localID, author: "Вы", isMine: true, sentAt: Date(), kind: .photo(nil, image, nil), status: .sent)
+    }
+
+    func sendRoute(_ routeID: String, chatID: String, localID: String) async throws -> ChatMessage {
+        ChatMessage(id: localID, author: "Вы", isMine: true, sentAt: Date(), kind: .text("Маршрут"), status: .sent)
+    }
+
+    func shareableRoutes() async throws -> [ChatShareableRoute] {
+        MockData.routes.filter { !$0.isPrivate }.map { ChatShareableRoute(id: $0.id, title: $0.title) }
     }
 
     func markRead(chatID: String, messageID: String) async { }

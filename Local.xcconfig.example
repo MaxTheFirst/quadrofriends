@@ -1,0 +1,4 @@
+// Скопируйте в Local.xcconfig и раскомментируйте нужный адрес.
+// Продовый адрес по умолчанию задан в Config.xcconfig.
+// API_BASE_URL = http:$(SLASH)$(SLASH)localhost:8080/api
+// Для iPhone укажите доступный устройству адрес backend вместо localhost.

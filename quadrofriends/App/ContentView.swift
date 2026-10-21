@@ -20,13 +20,21 @@ struct ContentView: View {
         TabView(selection: $selection) {
             Tab("Карта", systemImage: "map.fill", value: 0) {
                 NavigationStack {
-                    MapHomeView(appTheme: $appTheme)
+                    if usesBackend {
+                        ServerMapView(appTheme: $appTheme)
+                    } else {
+                        MapHomeView(appTheme: $appTheme)
+                    }
                 }
             }
 
             Tab("Маршруты", systemImage: "point.topleft.down.to.point.bottomright.curvepath", value: 1) {
                 NavigationStack {
-                    MyRoutesView()
+                    if usesBackend {
+                        ServerMyRoutesView()
+                    } else {
+                        MyRoutesView()
+                    }
                 }
             }
 
@@ -42,6 +50,9 @@ struct ContentView: View {
         }
         .tint(Color.brandOlive)
         .preferredColorScheme(appTheme.colorScheme)
+        .onReceive(NotificationCenter.default.publisher(for: .openMainMap)) { _ in
+            selection = 0
+        }
         .onAppear {
             chatLocationStore.setDemoDataEnabled(sessionKind == "demo")
             chatLocationStore.connect(
@@ -69,15 +80,18 @@ struct ContentView: View {
     }
 
     private var usesBackend: Bool {
-        sessionKind == "vk" && apiSession.isAuthorized
+        sessionKind != "demo" && apiSession.isAuthorized
     }
+}
+
+extension Notification.Name {
+    static let openMainMap = Notification.Name("quadrofriends.openMainMap")
 }
 
 #Preview {
     let session = APISession()
     ContentView()
         .environmentObject(ProfileStore())
-        .environmentObject(VKAuthManager())
         .environmentObject(ChatLocationSharingStore())
         .environmentObject(session)
         .environmentObject(RealtimeClient(session: session))

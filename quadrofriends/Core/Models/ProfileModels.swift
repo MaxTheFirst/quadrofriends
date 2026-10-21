@@ -6,6 +6,7 @@ struct Vehicle: Identifiable, Codable, Equatable {
     var year: Int
     var imageName: String
     var isPrimary: Bool
+    var imageData: Data? = nil
 }
 
 struct UserProfile: Codable, Equatable {
@@ -15,6 +16,7 @@ struct UserProfile: Codable, Equatable {
     var birthYear: Int
     var city: String
     var vehicles: [Vehicle]
+    var avatarData: Data? = nil
 
     static let sample = UserProfile(
         firstName: "Иван",

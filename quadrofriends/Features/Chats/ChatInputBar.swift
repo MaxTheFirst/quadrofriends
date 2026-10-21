@@ -107,7 +107,7 @@ final class ChatInputBar: UIView {
 
     private func updateState() {
         let isEmpty = trimmedText.isEmpty
-        sendButton.configuration?.image = UIImage(systemName: isEmpty ? "mic.fill" : "arrow.up.circle.fill")
+        sendButton.configuration?.image = UIImage(systemName: "arrow.up.circle.fill")
         sendButton.isEnabled = !isEmpty
         placeholderLabel.isHidden = !textView.text.isEmpty
     }

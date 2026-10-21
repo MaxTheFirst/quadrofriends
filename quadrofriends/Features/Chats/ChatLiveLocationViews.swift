@@ -68,10 +68,49 @@ struct ChatLiveLocationAvatar: View {
     let share: ChatLiveLocation
 
     var body: some View {
-        AvatarView(imageName: share.avatarImage, initials: share.initials, size: 42)
-            .overlay(Circle().stroke(Color.brandOlive, lineWidth: 3))
+        Group {
+            if share.isMine {
+                AvatarView(imageName: share.avatarImage, initials: share.initials, size: 42)
+                    .overlay(Circle().stroke(Color.brandOlive, lineWidth: 4))
+            } else {
+                ZStack {
+                    Circle().fill(Color.brandOrange)
+                    Text(share.initials)
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 42, height: 42)
+                .overlay(Circle().stroke(.white, lineWidth: 3))
+            }
+        }
             .shadow(color: .black.opacity(0.22), radius: 5, y: 2)
             .accessibilityLabel("\(share.name), делится геопозицией")
+    }
+}
+
+struct ChatLocationParticipantsView: View {
+    let chatID: String
+    @ObservedObject var locationStore: ChatLocationSharingStore
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(locationStore.shares(in: chatID)) { share in
+                HStack(spacing: 12) {
+                    ChatLiveLocationAvatar(share: share)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(share.isMine ? "Вы" : share.name).font(.headline)
+                        Text("Делится геопозицией").font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .navigationTitle("Участники")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { Button("Готово") { dismiss() } }
+            }
+        }
     }
 }
 

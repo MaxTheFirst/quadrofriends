@@ -4,6 +4,7 @@ import UIKit
 final class ChatLocationBannerView: UIView {
     var onOpenMap: (() -> Void)?
     var onStopSharing: (() -> Void)?
+    var onShowParticipants: (() -> Void)?
 
     private let titleLabel = UILabel(textStyle: .subheadline, weight: .semibold)
     private let subtitleLabel = UILabel(textStyle: .caption1, color: .secondaryLabel)
@@ -71,6 +72,10 @@ final class ChatLocationBannerView: UIView {
         let headerRow = UIStackView(arrangedSubviews: [iconView, textStack, demoLabel])
         headerRow.spacing = 10
         headerRow.alignment = .top
+        headerRow.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(showParticipants)))
+        headerRow.isAccessibilityElement = true
+        headerRow.accessibilityTraits = .button
+        headerRow.accessibilityLabel = "Участники, которые делятся геопозицией"
 
         let buttonsSpacer = UIView()
         buttonsSpacer.setContentHuggingPriority(UILayoutPriority(1), for: .horizontal)
@@ -93,6 +98,10 @@ final class ChatLocationBannerView: UIView {
             stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             stackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
         ])
+    }
+
+    @objc private func showParticipants() {
+        onShowParticipants?()
     }
 
     private func makeActionButton(

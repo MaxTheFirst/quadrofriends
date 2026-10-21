@@ -10,6 +10,7 @@ final class ChatMessageCell: UICollectionViewCell {
     private let bubbleView = UIView()
     private let authorLabel = UILabel(textStyle: .caption2, weight: .semibold, color: .brandOlive)
     private let messageLabel = UILabel(textStyle: .body)
+    private let photoView = UIImageView()
     private let locationCard = ChatLocationCardView()
     private let timeLabel = UILabel(textStyle: .caption2, color: .secondaryLabel)
     private let checkmarkView = UIImageView(image: UIImage(systemName: "checkmark"))
@@ -18,6 +19,8 @@ final class ChatMessageCell: UICollectionViewCell {
     private var paddingConstraints: [NSLayoutConstraint] = []
     private var incomingConstraints: [NSLayoutConstraint] = []
     private var outgoingConstraints: [NSLayoutConstraint] = []
+    private var photoTask: Task<Void, Never>?
+    private var photoURL: URL?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -29,7 +32,19 @@ final class ChatMessageCell: UICollectionViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        photoTask?.cancel()
+        photoTask = nil
+        photoURL = nil
+        photoView.image = nil
+    }
+
     func configure(with message: ChatMessage) {
+        photoTask?.cancel()
+        photoTask = nil
+        photoURL = nil
+        photoView.image = nil
         authorLabel.text = message.author
         authorLabel.isHidden = message.isMine
         timeLabel.text = message.status == .failed ? "Не отправлено" : message.time
@@ -42,12 +57,30 @@ final class ChatMessageCell: UICollectionViewCell {
         case .text(let text):
             messageLabel.text = text
             messageLabel.isHidden = false
+            photoView.isHidden = true
             locationCard.isHidden = true
             setPadding(11)
             content = text
+        case .photo(let url, let image, let caption):
+            photoURL = url
+            photoView.image = image
+            photoView.isHidden = false
+            messageLabel.text = caption
+            messageLabel.isHidden = caption?.isEmpty != false
+            locationCard.isHidden = true
+            setPadding(6)
+            content = "Фото"
+            if let url, image == nil {
+                photoTask = Task { [weak self] in
+                    let loaded = await RemoteImageLoader.shared.image(for: url)
+                    guard let self, !Task.isCancelled, self.photoURL == url else { return }
+                    self.photoView.image = loaded
+                }
+            }
         case .location(let coordinate):
             locationCard.configure(coordinate: coordinate)
             messageLabel.isHidden = true
+            photoView.isHidden = true
             locationCard.isHidden = false
             setPadding(6)
             content = "Геопозиция"
@@ -121,6 +154,11 @@ final class ChatMessageCell: UICollectionViewCell {
         contentView.addSubview(bubbleView)
 
         messageLabel.numberOfLines = 0
+        photoView.contentMode = .scaleAspectFill
+        photoView.clipsToBounds = true
+        photoView.layer.cornerRadius = 10
+        photoView.backgroundColor = .secondarySystemFill
+        photoView.translatesAutoresizingMaskIntoConstraints = false
         checkmarkView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(textStyle: .caption2)
         checkmarkView.tintColor = .brandOlive
 
@@ -131,7 +169,7 @@ final class ChatMessageCell: UICollectionViewCell {
         footerStack.spacing = 3
         footerStack.alignment = .center
 
-        let stackView = UIStackView(arrangedSubviews: [authorLabel, messageLabel, locationCard, footerStack])
+        let stackView = UIStackView(arrangedSubviews: [authorLabel, photoView, messageLabel, locationCard, footerStack])
         stackView.axis = .vertical
         stackView.spacing = 5
         stackView.translatesAutoresizingMaskIntoConstraints = false
@@ -161,6 +199,8 @@ final class ChatMessageCell: UICollectionViewCell {
         ]
 
         NSLayoutConstraint.activate(paddingConstraints + incomingConstraints + [
+            photoView.widthAnchor.constraint(equalToConstant: 240),
+            photoView.heightAnchor.constraint(equalToConstant: 180),
             bubbleView.topAnchor.constraint(equalTo: contentView.topAnchor),
             bubbleBottom
         ])

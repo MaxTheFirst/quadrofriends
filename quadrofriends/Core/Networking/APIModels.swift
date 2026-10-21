@@ -61,16 +61,41 @@ struct UserSummaryDTO: Decodable {
 
 struct CreateSessionRequest: Encodable {
     let grantType: String
-    var providerAccessToken: String?
-    var refreshToken: String?
-    var deviceId: String?
+    let email: String?
+    let password: String?
+    let firstName: String?
+    let lastName: String?
+    let username: String?
+    let birthYear: Int?
+    let city: String?
+    let refreshToken: String?
+    let deviceId: String
 
-    static func vk(accessToken: String, deviceID: String) -> CreateSessionRequest {
-        CreateSessionRequest(grantType: "vk", providerAccessToken: accessToken, deviceId: deviceID)
+    static func register(
+        email: String, password: String, firstName: String, lastName: String,
+        username: String?, birthYear: Int?, city: String?, deviceID: String
+    ) -> CreateSessionRequest {
+        CreateSessionRequest(
+            grantType: "register", email: email, password: password,
+            firstName: firstName, lastName: lastName, username: username,
+            birthYear: birthYear, city: city, refreshToken: nil, deviceId: deviceID
+        )
+    }
+
+    static func password(email: String, password: String, deviceID: String) -> CreateSessionRequest {
+        CreateSessionRequest(
+            grantType: "password", email: email, password: password,
+            firstName: nil, lastName: nil, username: nil, birthYear: nil,
+            city: nil, refreshToken: nil, deviceId: deviceID
+        )
     }
 
     static func refresh(token: String, deviceID: String) -> CreateSessionRequest {
-        CreateSessionRequest(grantType: "refresh", refreshToken: token, deviceId: deviceID)
+        CreateSessionRequest(
+            grantType: "refresh", email: nil, password: nil,
+            firstName: nil, lastName: nil, username: nil, birthYear: nil,
+            city: nil, refreshToken: token, deviceId: deviceID
+        )
     }
 }
 
@@ -82,4 +107,31 @@ struct SessionDTO: Decodable {
     let refreshExpiresAt: Date
     let user: UserSummaryDTO
     let isNewUser: Bool
+}
+
+struct AccountProfileDTO: Decodable {
+    struct Stats: Decodable {
+        let routeCount: Int
+        let followerCount: Int
+        let followingCount: Int
+    }
+
+    let id: String
+    let email: String?
+    let firstName: String
+    let lastName: String
+    let username: String
+    let birthYear: Int?
+    let city: String?
+    let avatar: MediaDTO?
+    let vehicles: [AccountVehicleDTO]
+    let stats: Stats
+}
+
+struct AccountVehicleDTO: Decodable, Identifiable {
+    let id: String
+    let model: String
+    let year: Int
+    let isPrimary: Bool
+    let image: MediaDTO?
 }

@@ -12,13 +12,13 @@ struct ChatsTab: View {
 
     var body: some View {
         ChatsNavigationView(
-            isDemo: sessionKind != "vk",
+            isDemo: sessionKind == "demo",
             apiSession: apiSession,
             realtime: realtime,
             locationStore: locationStore,
             profileStore: profileStore
         )
-        // При смене режима (демо или вход через VK) экран создаётся заново с другим источником данных.
+        // При смене режима экран создаётся заново с другим источником данных.
         .id(sessionKind)
         .ignoresSafeArea()
     }
@@ -38,7 +38,8 @@ private struct ChatsNavigationView: UIViewControllerRepresentable {
         let chatsController = ChatsViewController(
             repository: repository,
             locationStore: locationStore,
-            profileStore: profileStore
+            profileStore: profileStore,
+            apiSession: isDemo ? nil : apiSession
         )
         let navigationController = UINavigationController(rootViewController: chatsController)
         navigationController.view.tintColor = .brandOlive
@@ -49,10 +50,6 @@ private struct ChatsNavigationView: UIViewControllerRepresentable {
 }
 
 final class ChatsViewController: UIViewController {
-    private enum Section {
-        case main
-    }
-
     private enum LoadState {
         case idle
         case loading
@@ -65,9 +62,11 @@ final class ChatsViewController: UIViewController {
     private let repository: any ChatsRepository
     private let locationStore: ChatLocationSharingStore
     private let profileStore: ProfileStore
+    private let apiSession: APISession?
     private var cancellables = Set<AnyCancellable>()
 
     private var chats: [ChatPreview] = []
+    private var foundUsers: [UserSummaryDTO] = []
     /// Данные, по которым настроены ячейки: нужны, чтобы перенастраивать только изменившиеся.
     private var renderedChats: [ChatPreview.ID: ChatPreview] = [:]
     private var nextCursor: String?
@@ -77,12 +76,13 @@ final class ChatsViewController: UIViewController {
     private var loadMoreTask: Task<Void, Never>?
 
     private lazy var collectionView = UICollectionView(frame: .zero, collectionViewLayout: makeLayout())
-    private var dataSource: UICollectionViewDiffableDataSource<Section, ChatPreview.ID>!
+    private var dataSource: UICollectionViewDiffableDataSource<Int, ChatPreview.ID>!
 
-    init(repository: any ChatsRepository, locationStore: ChatLocationSharingStore, profileStore: ProfileStore) {
+    init(repository: any ChatsRepository, locationStore: ChatLocationSharingStore, profileStore: ProfileStore, apiSession: APISession?) {
         self.repository = repository
         self.locationStore = locationStore
         self.profileStore = profileStore
+        self.apiSession = apiSession
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -118,7 +118,7 @@ final class ChatsViewController: UIViewController {
     }
 
     override func updateContentUnavailableConfiguration(using state: UIContentUnavailableConfigurationState) {
-        guard chats.isEmpty else {
+        guard chats.isEmpty && foundUsers.isEmpty else {
             contentUnavailableConfiguration = nil
             return
         }
@@ -225,8 +225,19 @@ final class ChatsViewController: UIViewController {
             guard let self, !Task.isCancelled else { return }
             do {
                 let page = try await self.repository.chats(query: query, cursor: nil)
+                var users: [UserSummaryDTO] = []
+                if let session = self.apiSession, !query.isEmpty {
+                    let normalized = query.replacingOccurrences(of: "^@", with: "", options: .regularExpression)
+                    let people: Page<UserSummaryDTO> = try await session.client.send(APIRequest(
+                        method: .get,
+                        path: "users",
+                        query: [URLQueryItem(name: "query", value: normalized), URLQueryItem(name: "limit", value: "30")]
+                    ))
+                    users = people.items.filter { $0.id != session.currentUserID }
+                }
                 guard !Task.isCancelled else { return }
                 self.chats = Self.uniqued(page.items)
+                self.foundUsers = users
                 self.nextCursor = page.nextCursor
                 self.loadState = .idle
             } catch {
@@ -242,7 +253,8 @@ final class ChatsViewController: UIViewController {
     }
 
     private func loadMoreIfNeeded(at indexPath: IndexPath) {
-        guard indexPath.item >= chats.count - Self.prefetchDistance,
+        guard indexPath.item < chats.count,
+              indexPath.item >= chats.count - Self.prefetchDistance,
               let cursor = nextCursor, loadMoreTask == nil else { return }
 
         let query = query
@@ -303,16 +315,29 @@ final class ChatsViewController: UIViewController {
     // MARK: - Снимок
 
     private func applySnapshot(animated: Bool) {
-        var snapshot = NSDiffableDataSourceSnapshot<Section, ChatPreview.ID>()
-        snapshot.appendSections([.main])
-        snapshot.appendItems(chats.map(\.id))
+        let userPreviews = foundUsers.map { user in
+            ChatPreview(
+                id: "user:\(user.id)",
+                title: user.displayName,
+                subtitle: "@\(user.username) · Начать чат",
+                time: "",
+                unread: 0,
+                avatarImage: nil,
+                initials: user.initials,
+                avatarURL: user.avatar?.thumbnailUrl
+            )
+        }
+        let displayed = chats + userPreviews
+        var snapshot = NSDiffableDataSourceSnapshot<Int, ChatPreview.ID>()
+        snapshot.appendSections([0])
+        snapshot.appendItems(displayed.map(\.id))
 
-        let changedIDs = chats.compactMap { chat -> ChatPreview.ID? in
+        let changedIDs = displayed.compactMap { chat -> ChatPreview.ID? in
             guard let rendered = renderedChats[chat.id], rendered != chat else { return nil }
             return chat.id
         }
         snapshot.reconfigureItems(changedIDs)
-        renderedChats = Dictionary(chats.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        renderedChats = Dictionary(displayed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         dataSource.apply(snapshot, animatingDifferences: animated)
         setNeedsUpdateContentUnavailableConfiguration()
@@ -333,6 +358,7 @@ final class ChatsViewController: UIViewController {
     private static func previewText(for message: ChatMessage) -> String {
         switch message.kind {
         case .text(let text): return text
+        case .photo: return "Фото"
         case .location: return "Геопозиция"
         }
     }
@@ -345,7 +371,15 @@ final class ChatsViewController: UIViewController {
 
     private func presentNewChat() {
         let controller = UIHostingController(
-            rootView: NavigationStack { NewChatView() }
+            rootView: NavigationStack {
+                NewChatView(session: apiSession) { [weak self] chat in
+                    self?.dismiss(animated: true) { [weak self] in
+                        self?.navigationItem.searchController?.searchBar.text = ""
+                        self?.reload()
+                        self?.openChat(chat)
+                    }
+                }
+            }
                 .tint(Color.brandOlive)
         )
         present(controller, animated: true)
@@ -360,6 +394,36 @@ final class ChatsViewController: UIViewController {
         )
         controller.onRead = { [weak self] chatID in self?.markChatRead(chatID) }
         navigationController?.pushViewController(controller, animated: true)
+    }
+
+    private func startDirectChat(with user: UserSummaryDTO) {
+        guard let apiSession else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let chat: ChatSummaryDTO = try await apiSession.client.send(APIRequest(
+                    method: .post,
+                    path: "chats",
+                    body: ChatCreateRequest(kind: "direct", participantUserIds: [user.id], title: nil),
+                    idempotencyKey: UUID().uuidString
+                ))
+                self.navigationItem.searchController?.searchBar.text = ""
+                self.reload()
+                self.openChat(ChatPreview(
+                    id: chat.id,
+                    title: chat.title,
+                    subtitle: "Нет сообщений",
+                    time: "Сейчас",
+                    unread: chat.unreadCount,
+                    avatarImage: nil,
+                    initials: user.initials,
+                    avatarURL: chat.avatar?.thumbnailUrl,
+                    sharesLocation: chat.sharesLocation
+                ))
+            } catch {
+                self.presentError(error)
+            }
+        }
     }
 
     private func presentError(_ error: Error) {
@@ -387,7 +451,11 @@ final class ChatsViewController: UIViewController {
 extension ChatsViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard let chatID = dataSource.itemIdentifier(for: indexPath), let chat = renderedChats[chatID] else { return }
-        openChat(chat)
+        if let user = foundUsers.first(where: { "user:\($0.id)" == chatID }) {
+            startDirectChat(with: user)
+        } else {
+            openChat(chat)
+        }
     }
 
     func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
@@ -453,6 +521,7 @@ private final class ChatListCell: UICollectionViewListCell {
     private func configureLayout() {
         isAccessibilityElement = true
         accessibilityTraits = .button
+        contentView.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 12)
 
         let avatarContainer = UIView()
         avatarView.translatesAutoresizingMaskIntoConstraints = false
@@ -464,17 +533,22 @@ private final class ChatListCell: UICollectionViewListCell {
         subtitleIcon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(textStyle: .caption2)
         subtitleIcon.tintColor = .brandOlive
         subtitleIcon.setContentHuggingPriority(.required, for: .horizontal)
-        subtitleLabel.numberOfLines = 2
+        titleLabel.numberOfLines = 1
+        titleLabel.lineBreakMode = .byTruncatingTail
+        subtitleLabel.numberOfLines = 1
+        subtitleLabel.lineBreakMode = .byTruncatingTail
 
         let subtitleRow = UIStackView(arrangedSubviews: [subtitleIcon, subtitleLabel])
         subtitleRow.spacing = 4
-        subtitleRow.alignment = .firstBaseline
+        subtitleRow.alignment = .center
 
         let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleRow])
         textStack.axis = .vertical
-        textStack.spacing = 5
+        textStack.spacing = 3
         textStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
         textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+        subtitleRow.setContentCompressionResistancePriority(.required, for: .vertical)
 
         timeLabel.setContentHuggingPriority(.required, for: .horizontal)
         timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -487,14 +561,11 @@ private final class ChatListCell: UICollectionViewListCell {
         let rowStack = UIStackView(arrangedSubviews: [avatarContainer, textStack, trailingStack])
         rowStack.spacing = 12
         rowStack.alignment = .center
-        rowStack.setCustomSpacing(16, after: textStack)
+        rowStack.setCustomSpacing(8, after: textStack)
         rowStack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(rowStack)
 
         let margins = contentView.layoutMarginsGuide
-        let bottomConstraint = rowStack.bottomAnchor.constraint(equalTo: margins.bottomAnchor, constant: -6)
-        bottomConstraint.priority = .defaultHigh
-
         NSLayoutConstraint.activate([
             avatarView.topAnchor.constraint(equalTo: avatarContainer.topAnchor),
             avatarView.leadingAnchor.constraint(equalTo: avatarContainer.leadingAnchor),
@@ -503,10 +574,12 @@ private final class ChatListCell: UICollectionViewListCell {
             avatarBadge.trailingAnchor.constraint(equalTo: avatarView.trailingAnchor, constant: 2),
             avatarBadge.bottomAnchor.constraint(equalTo: avatarView.bottomAnchor, constant: 2),
 
-            rowStack.topAnchor.constraint(equalTo: margins.topAnchor, constant: 6),
+            avatarContainer.widthAnchor.constraint(equalToConstant: 54),
+            avatarContainer.heightAnchor.constraint(equalToConstant: 54),
+            rowStack.topAnchor.constraint(equalTo: margins.topAnchor),
             rowStack.leadingAnchor.constraint(equalTo: margins.leadingAnchor),
             rowStack.trailingAnchor.constraint(equalTo: margins.trailingAnchor),
-            bottomConstraint
+            rowStack.bottomAnchor.constraint(equalTo: margins.bottomAnchor)
         ])
     }
 }

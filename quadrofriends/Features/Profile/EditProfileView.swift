@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 private struct VehicleEditorTarget: Identifiable {
@@ -7,13 +8,17 @@ private struct VehicleEditorTarget: Identifiable {
 }
 
 struct EditProfileView: View {
+    enum Mode { case profile, vehicles }
     @Environment(\.dismiss) private var dismiss
     @State private var draft: UserProfile
     @State private var vehicleEditor: VehicleEditorTarget?
+    @State private var selectedPhoto: PhotosPickerItem?
+    let mode: Mode
     let onSave: (UserProfile) -> Void
 
-    init(profile: UserProfile, onSave: @escaping (UserProfile) -> Void) {
+    init(profile: UserProfile, mode: Mode = .profile, onSave: @escaping (UserProfile) -> Void) {
         _draft = State(initialValue: profile)
+        self.mode = mode
         self.onSave = onSave
     }
 
@@ -26,17 +31,39 @@ struct EditProfileView: View {
 
     var body: some View {
         Form {
-            Section("Основное") {
-                TextField("Имя", text: $draft.firstName)
-                TextField("Фамилия", text: $draft.lastName)
-                TextField("Юзернейм", text: $draft.username)
-                    .textInputAutocapitalization(.never)
-                TextField("Год рождения", value: $draft.birthYear, format: .number.grouping(.never))
-                    .keyboardType(.numberPad)
-                TextField("Город", text: $draft.city)
+            if mode == .profile {
+                Section("Аватар") {
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        HStack(spacing: 14) {
+                            Group {
+                                if let data = draft.avatarData, let image = UIImage(data: data) {
+                                    Image(uiImage: image).resizable().scaledToFill()
+                                } else {
+                                    Image(systemName: "person.crop.circle.fill").resizable().scaledToFit()
+                                }
+                            }
+                            .frame(width: 64, height: 64).clipShape(Circle())
+                            Text("Выбрать фотографию")
+                        }
+                    }
+                }
+                Section("Основное") {
+                    LabeledContent("Имя") { TextField("Имя", text: $draft.firstName).multilineTextAlignment(.trailing) }
+                    LabeledContent("Фамилия") { TextField("Фамилия", text: $draft.lastName).multilineTextAlignment(.trailing) }
+                    LabeledContent("Юзернейм") {
+                        TextField("Юзернейм", text: $draft.username)
+                            .textInputAutocapitalization(.never).multilineTextAlignment(.trailing)
+                    }
+                    LabeledContent("Год рождения") {
+                        TextField("Год рождения", value: $draft.birthYear, format: .number.grouping(.never))
+                            .keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                    }
+                    LabeledContent("Город") { TextField("Город", text: $draft.city).multilineTextAlignment(.trailing) }
+                }
             }
 
-            Section("Моя техника") {
+            if mode == .vehicles {
+              Section("Моя техника") {
                 ForEach(draft.vehicles) { vehicle in
                     Button {
                         vehicleEditor = VehicleEditorTarget(vehicle: vehicle, isNew: false)
@@ -59,8 +86,9 @@ struct EditProfileView: View {
                     )
                 }
             }
+            }
         }
-        .navigationTitle("Редактировать профиль")
+        .navigationTitle(mode == .profile ? "Редактировать профиль" : "Моя техника")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -82,6 +110,13 @@ struct EditProfileView: View {
                 EditVehicleView(vehicle: target.vehicle) { vehicle in
                     upsertVehicle(vehicle, isNew: target.isNew)
                 }
+            }
+        }
+        .onChange(of: selectedPhoto) { _, photo in
+            Task {
+                guard let photo, let data = try? await photo.loadTransferable(type: Data.self),
+                      let image = UIImage(data: data) else { return }
+                draft.avatarData = image.jpegData(compressionQuality: 0.72)
             }
         }
     }
@@ -113,6 +148,7 @@ struct EditProfileView: View {
 private struct EditVehicleView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: Vehicle
+    @State private var selectedPhoto: PhotosPickerItem?
     let onSave: (Vehicle) -> Void
 
     init(vehicle: Vehicle, onSave: @escaping (Vehicle) -> Void) {
@@ -128,10 +164,27 @@ private struct EditVehicleView: View {
 
     var body: some View {
         Form {
+            Section("Фото техники") {
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    HStack(spacing: 14) {
+                        Group {
+                            if let data = draft.imageData, let image = UIImage(data: data) {
+                                Image(uiImage: image).resizable().scaledToFill()
+                            } else {
+                                Image(draft.imageName).resizable().scaledToFill()
+                            }
+                        }
+                        .frame(width: 80, height: 60).clipShape(RoundedRectangle(cornerRadius: 10))
+                        Text("Выбрать фотографию")
+                    }
+                }
+            }
             Section("Квадроцикл") {
-                TextField("Марка и модель", text: $draft.model)
-                TextField("Год выпуска", value: $draft.year, format: .number.grouping(.never))
-                    .keyboardType(.numberPad)
+                LabeledContent("Марка и модель") { TextField("Марка и модель", text: $draft.model).multilineTextAlignment(.trailing) }
+                LabeledContent("Год выпуска") {
+                    TextField("Год выпуска", value: $draft.year, format: .number.grouping(.never))
+                        .keyboardType(.numberPad).multilineTextAlignment(.trailing)
+                }
                 Toggle("Основной", isOn: $draft.isPrimary)
             }
         }
@@ -147,6 +200,13 @@ private struct EditVehicleView: View {
                     dismiss()
                 }
                 .disabled(!isValid)
+            }
+        }
+        .onChange(of: selectedPhoto) { _, photo in
+            Task {
+                guard let photo, let data = try? await photo.loadTransferable(type: Data.self),
+                      let image = UIImage(data: data) else { return }
+                draft.imageData = image.jpegData(compressionQuality: 0.72)
             }
         }
     }

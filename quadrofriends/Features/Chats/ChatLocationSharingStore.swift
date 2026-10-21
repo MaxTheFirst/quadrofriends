@@ -21,6 +21,7 @@ final class ChatLocationSharingStore: NSObject, ObservableObject, CLLocationMana
     // Сервер: без сессии передача остаётся только на этом устройстве.
     private var api: ChatsAPI?
     private var currentUserID: String?
+    private var currentUserInitials: String?
     private var realtimeSubscriptions = Set<AnyCancellable>()
     /// ID собственной передачи на сервере для каждого чата.
     private var remoteShareIDs: [String: String] = [:]
@@ -38,6 +39,9 @@ final class ChatLocationSharingStore: NSObject, ObservableObject, CLLocationMana
         realtimeSubscriptions.removeAll()
         api = session.map { ChatsAPI(client: $0.client) }
         currentUserID = session?.currentUserID
+        currentUserInitials = session?.currentUserDisplayName.map { name in
+            String(name.split(whereSeparator: \.isWhitespace).prefix(2).compactMap { $0.first })
+        }
 
         guard api != nil else {
             remoteShareIDs.removeAll()
@@ -276,7 +280,8 @@ final class ChatLocationSharingStore: NSObject, ObservableObject, CLLocationMana
         let now = Date()
 
         for (chatID, profile) in pendingProfiles {
-            let initials = String(profile.firstName.prefix(1)) + String(profile.lastName.prefix(1))
+            let initials = currentUserInitials ??
+                (String(profile.firstName.prefix(1)) + String(profile.lastName.prefix(1)))
             let expiresAt = now.addingTimeInterval(Self.shareDuration)
             sharesByChat[chatID, default: []].append(
                 ChatLiveLocation(
