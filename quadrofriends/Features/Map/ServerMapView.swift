@@ -6,20 +6,18 @@ struct ServerMapView: View {
     @EnvironmentObject private var chatLocationStore: ChatLocationSharingStore
     @Binding var appTheme: AppTheme
     @StateObject private var location = MapLocationRecordingStore()
+    @StateObject private var routesViewModel = ServerRoutesQueryViewModel()
     @State private var camera: MapCameraPosition = .region(Self.initialRegion)
     @State private var visibleRegion = Self.initialRegion
     @State private var mapDisplayStyle = MapDisplayStyle.scheme
-    @State private var routes: [ServerRoute] = []
     @State private var selectedRoute: ServerRoute?
     @State private var selectedGeometry: ServerRouteGeometry?
-    @State private var isLoading = false
     @State private var error: String?
     @State private var showingSearch = false
     @State private var showingMapSettings = false
     @State private var showingMarkerEditor = false
     @State private var showingPublish = false
     @State private var localMarkers: [RouteMapMarker] = []
-    @State private var didLoad = false
     @State private var followsUser = true
     @State private var didCenterOnUser = false
 
@@ -60,7 +58,7 @@ struct ServerMapView: View {
                 }
                 .annotationTitles(.hidden)
             }
-            ForEach(routes) { route in
+            ForEach(routesViewModel.routes) { route in
                 Annotation(route.title, coordinate: route.coordinate) {
                     Button {
                         Task { await select(route) }
@@ -104,7 +102,7 @@ struct ServerMapView: View {
                         showingMarkerEditor = true
                     }
                 }
-                if isLoading || location.isBusy { ProgressView().padding(8) }
+                if routesViewModel.isLoading || location.isBusy { ProgressView().padding(8) }
             }
             .padding(.top, 12)
             .padding(.trailing, MapControlLayout.edgeInset)
@@ -134,7 +132,7 @@ struct ServerMapView: View {
             .padding(.bottom, 16)
         }
         .overlay(alignment: .topLeading) {
-            if let error = location.error ?? error {
+            if let error = location.error ?? routesViewModel.error ?? error {
                 Button {
                     location.error = nil
                     Task { await loadRoutes() }
@@ -226,7 +224,6 @@ struct ServerMapView: View {
     }
 
     private func loadRoutes() async {
-        isLoading = true
         error = nil
         let region = visibleRegion
         let minLon = region.center.longitude - region.span.longitudeDelta / 2
@@ -234,16 +231,14 @@ struct ServerMapView: View {
         let maxLon = region.center.longitude + region.span.longitudeDelta / 2
         let maxLat = region.center.latitude + region.span.latitudeDelta / 2
         let bbox = "\(minLon),\(minLat),\(maxLon),\(maxLat)"
-        do {
-            routes = try await ServerRoutesAPI.list(session.client, path: "routes", query: [
+        await routesViewModel.load(
+            path: "routes",
+            query: [
                 URLQueryItem(name: "bbox", value: bbox),
                 URLQueryItem(name: "sort", value: "recommended")
-            ])
-        } catch {
-            self.error = error.localizedDescription
-        }
-        didLoad = true
-        isLoading = false
+            ],
+            from: RemoteServerRoutesDataSource(session: session)
+        )
     }
 
     private func zoom(by factor: Double) {
@@ -268,9 +263,10 @@ struct ServerMapView: View {
             span: MKCoordinateSpan(latitudeDelta: 0.04, longitudeDelta: 0.04)
         ))
         do {
-            selectedGeometry = try await session.client.send(APIRequest(
-                method: .get, path: "routes/\(route.id)/geometry"
-            ))
+            selectedGeometry = try await routesViewModel.geometry(
+                id: route.id,
+                from: RemoteServerRoutesDataSource(session: session)
+            )
         } catch {
             self.error = error.localizedDescription
         }
@@ -281,11 +277,9 @@ private struct ServerRouteSearchView: View {
     @EnvironmentObject private var session: APISession
     @Environment(\.dismiss) private var dismiss
     let onSelect: (ServerRoute) -> Void
+    @StateObject private var viewModel = ServerRoutesQueryViewModel()
     @State private var query = ""
     @State private var filter = RouteSearchFilter.all
-    @State private var routes: [ServerRoute] = []
-    @State private var isLoading = true
-    @State private var error: String?
     @State private var filtersExpanded = false
     @State private var maximumDistance = 525.0
     @State private var timeFilter = RouteTimeFilter.any
@@ -344,9 +338,9 @@ private struct ServerRouteSearchView: View {
                 }
                 .tint(Color.brandOlive)
 
-                if isLoading {
+                if viewModel.isLoading {
                     ProgressView("Ищем маршруты")
-                } else if let error {
+                } else if let error = viewModel.error {
                     ContentUnavailableView {
                         Label("Не удалось найти маршруты", systemImage: "wifi.exclamationmark")
                     } description: {
@@ -354,10 +348,10 @@ private struct ServerRouteSearchView: View {
                     } actions: {
                         Button("Повторить") { Task { await load() } }
                     }
-                } else if routes.isEmpty {
+                } else if viewModel.routes.isEmpty {
                     ContentUnavailableView("Маршруты не найдены", systemImage: "magnifyingglass")
                 } else {
-                    ForEach(routes) { route in
+                    ForEach(viewModel.routes) { route in
                         Button { onSelect(route) } label: {
                             ServerRouteRow(route: route)
                         }
@@ -386,8 +380,6 @@ private struct ServerRouteSearchView: View {
     }
 
     private func load() async {
-        isLoading = true
-        error = nil
         let visibility: String
         switch filter {
         case .all: visibility = "all"
@@ -404,8 +396,9 @@ private struct ServerRouteSearchView: View {
         func ratingValue(_ filter: RouteRatingFilter) -> String? {
             filter == .any ? nil : String(filter.rawValue)
         }
-        do {
-            routes = try await ServerRoutesAPI.list(session.client, path: "routes", query: [
+        await viewModel.load(
+            path: "routes",
+            query: [
                 URLQueryItem(name: "query", value: query.isEmpty ? nil : query),
                 URLQueryItem(name: "visibility", value: visibility),
                 URLQueryItem(name: "sort", value: "recommended"),
@@ -417,11 +410,9 @@ private struct ServerRouteSearchView: View {
                 URLQueryItem(name: "min_forest", value: ratingValue(forestFilter)),
                 URLQueryItem(name: "min_scenery", value: ratingValue(sceneryFilter)),
                 URLQueryItem(name: "min_completed_count", value: Int(minimumCompletedCount).map(String.init))
-            ])
-        } catch {
-            self.error = error.localizedDescription
-        }
-        isLoading = false
+            ],
+            from: RemoteServerRoutesDataSource(session: session)
+        )
     }
 
     private func ratingPicker(_ title: String, selection: Binding<RouteRatingFilter>) -> some View {

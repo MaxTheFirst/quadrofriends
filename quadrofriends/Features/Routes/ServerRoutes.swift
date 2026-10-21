@@ -49,25 +49,6 @@ struct ServerRouteFolder: Decodable, Identifiable {
     let routeCount: Int
 }
 
-@MainActor
-enum ServerRoutesAPI {
-    static func list(_ client: APIClient, path: String, query: [URLQueryItem] = [], authenticated: Bool = true) async throws -> [ServerRoute] {
-        var routes: [ServerRoute] = []
-        var cursor: String?
-        repeat {
-            let page: Page<ServerRoute> = try await client.send(APIRequest(
-                method: .get,
-                path: path,
-                query: query + [URLQueryItem(name: "limit", value: "50"), URLQueryItem(name: "cursor", value: cursor)],
-                requiresAuth: authenticated
-            ))
-            routes.append(contentsOf: page.items)
-            cursor = page.nextCursor
-        } while cursor != nil && routes.count < 500
-        return routes
-    }
-}
-
 struct ServerRouteRow: View {
     let route: ServerRoute
 
@@ -96,15 +77,11 @@ struct ServerRouteRow: View {
 struct ServerRouteDetailView: View {
     @EnvironmentObject private var session: APISession
     let routeID: String
-    @State private var route: ServerRoute?
-    @State private var geometry: ServerRouteGeometry?
-    @State private var error: String?
-    @State private var isLoading = true
-    @State private var isUpdatingBookmark = false
+    @StateObject private var viewModel = ServerRouteDetailViewModel()
 
     var body: some View {
         Group {
-            if let route {
+            if let route = viewModel.route {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         Text(route.title).font(.title2.bold())
@@ -125,7 +102,7 @@ struct ServerRouteDetailView: View {
                             Text(route.tags.joined(separator: " · "))
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
-                        if let geometry, geometry.coordinates.count > 1 {
+                        if let geometry = viewModel.geometry, geometry.coordinates.count > 1 {
                             Map {
                                 MapPolyline(coordinates: geometry.coordinates)
                                     .stroke(Color.brandOrange, lineWidth: 5)
@@ -136,7 +113,7 @@ struct ServerRouteDetailView: View {
                     }
                     .padding()
                 }
-            } else if let error {
+            } else if let error = viewModel.error {
                 ContentUnavailableView {
                     Label("Не удалось загрузить маршрут", systemImage: "wifi.exclamationmark")
                 } description: {
@@ -144,7 +121,7 @@ struct ServerRouteDetailView: View {
                 } actions: {
                     Button("Повторить") { Task { await load() } }
                 }
-            } else if isLoading {
+            } else if viewModel.isLoading {
                 ProgressView("Загружаем маршрут")
             }
         }
@@ -152,56 +129,34 @@ struct ServerRouteDetailView: View {
         .navigationTitle("Маршрут")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if let route {
+            if let route = viewModel.route {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await toggleBookmark(currentlySaved: route.isBookmarked) }
                     } label: {
                         Image(systemName: route.isBookmarked ? "bookmark.fill" : "bookmark")
                     }
-                    .disabled(isUpdatingBookmark)
+                    .disabled(viewModel.isUpdatingBookmark)
                 }
             }
         }
         .task(id: routeID) { await load() }
-        .alert("Ошибка", isPresented: Binding(get: { error != nil && route != nil }, set: { if !$0 { error = nil } })) {
-            Button("ОК", role: .cancel) { error = nil }
+        .alert("Ошибка", isPresented: Binding(get: { viewModel.error != nil && viewModel.route != nil }, set: { if !$0 { viewModel.error = nil } })) {
+            Button("ОК", role: .cancel) { viewModel.error = nil }
         } message: {
-            Text(error ?? "")
+            Text(viewModel.error ?? "")
         }
     }
 
     private func load() async {
-        error = nil
-        isLoading = true
-        do {
-            route = try await session.client.send(APIRequest(method: .get, path: "routes/\(routeID)"))
-            geometry = try await session.client.send(APIRequest(method: .get, path: "routes/\(routeID)/geometry"))
-            // Opening a card updates the server-side recent routes list.
-            let _: EmptyResponse = try await session.client.send(APIRequest(method: .put, path: "users/me/recent-routes/\(routeID)"))
-        } catch {
-            self.error = error.localizedDescription
-        }
-        isLoading = false
+        await viewModel.load(id: routeID, from: RemoteServerRoutesDataSource(session: session))
     }
 
     private func toggleBookmark(currentlySaved: Bool) async {
-        isUpdatingBookmark = true
-        defer { isUpdatingBookmark = false }
-        do {
-            if currentlySaved {
-                let _: EmptyResponse = try await session.client.send(APIRequest(method: .delete, path: "users/me/bookmarks/\(routeID)"))
-            } else {
-                // The API returns a bookmark object for PUT; only the success status matters here.
-                let _: ServerRouteBookmark = try await session.client.send(APIRequest(method: .put, path: "users/me/bookmarks/\(routeID)"))
-            }
-            route = try await session.client.send(APIRequest(method: .get, path: "routes/\(routeID)"))
-        } catch {
-            self.error = error.localizedDescription
-        }
+        await viewModel.toggleBookmark(
+            id: routeID,
+            currentlySaved: currentlySaved,
+            using: RemoteServerRoutesDataSource(session: session)
+        )
     }
-}
-
-private struct ServerRouteBookmark: Decodable {
-    let routeId: String
 }
