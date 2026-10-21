@@ -1,5 +1,6 @@
 # macOS
 .DS_Store
+~$*.pptx
 
 # Xcode user settings and build output
 xcuserdata/

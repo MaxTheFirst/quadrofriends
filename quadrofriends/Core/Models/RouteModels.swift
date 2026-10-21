@@ -1,6 +1,6 @@
 import Foundation
 
-struct TrailRoute: Identifiable {
+struct TrailRoute: Identifiable, Codable {
     let id: String
     let title: String
     let imageName: String
@@ -16,7 +16,7 @@ struct TrailRoute: Identifiable {
     let author: RouteAuthor
 }
 
-struct RouteAuthor {
+struct RouteAuthor: Codable {
     let id: String
     let name: String
     let username: String
@@ -27,7 +27,7 @@ struct RouteAuthor {
     let vehicles: [Vehicle]
 }
 
-struct RouteRatings {
+struct RouteRatings: Codable {
     let difficulty: Double
     let mud: Double
     let fields: Double
@@ -35,9 +35,16 @@ struct RouteRatings {
     let scenery: Double
 }
 
-struct RouteFolder: Identifiable {
-    let id = UUID()
+struct RouteFolder: Identifiable, Codable {
+    let id: UUID
     let name: String
     let count: Int
     let icon: String
+
+    init(id: UUID = UUID(), name: String, count: Int, icon: String) {
+        self.id = id
+        self.name = name
+        self.count = count
+        self.icon = icon
+    }
 }

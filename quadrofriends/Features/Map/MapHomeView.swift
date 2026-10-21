@@ -5,6 +5,7 @@ import PhotosUI
 
 struct MapHomeView: View {
     @EnvironmentObject private var chatLocationStore: ChatLocationSharingStore
+    @StateObject private var routesViewModel = DemoRoutesViewModel()
     @Binding var appTheme: AppTheme
     @State private var camera: MapCameraPosition = .region(Self.region)
     @State private var visibleRegion = Self.region
@@ -84,7 +85,7 @@ struct MapHomeView: View {
     }
 
     private var searchResults: [TrailRoute] {
-        MockData.routes.filter { route in
+        routesViewModel.routes.filter { route in
             let normalizedQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
             let matchesText = normalizedQuery.isEmpty
                 || route.title.localizedCaseInsensitiveContains(normalizedQuery)

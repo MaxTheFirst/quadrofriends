@@ -1,19 +1,11 @@
 import SwiftUI
 
-enum MyRoutesTab: String, CaseIterable, Identifiable {
-    case recent = "Недавние"
-    case privateRoutes = "Приватные"
-
-    var id: Self { self }
-}
-
 struct MyRoutesView: View {
+    @StateObject private var viewModel = DemoRoutesViewModel()
     @State private var selectedTab = MyRoutesTab.recent
     @State private var showingFolderEditor = false
 
-    private var visibleRoutes: [TrailRoute] {
-        selectedTab == .recent ? MockData.routes : MockData.routes.filter(\.isPrivate)
-    }
+    private var visibleRoutes: [TrailRoute] { viewModel.routes(for: selectedTab) }
 
     var body: some View {
         ScrollView {
@@ -47,7 +39,7 @@ struct MyRoutesView: View {
                         }
                         .font(.subheadline)
                     }
-                    ForEach(MockData.folders) { folder in
+                    ForEach(viewModel.folders) { folder in
                         Button { } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: folder.icon)

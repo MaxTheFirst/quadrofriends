@@ -2,7 +2,7 @@ import Foundation
 import CoreLocation
 import UIKit
 
-struct ChatPreview: Identifiable, Equatable {
+struct ChatPreview: Identifiable, Equatable, Codable {
     let id: String
     var title: String
     var subtitle: String

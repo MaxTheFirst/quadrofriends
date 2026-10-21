@@ -2,23 +2,23 @@ import SwiftUI
 
 struct ProfileView: View {
     @EnvironmentObject private var profileStore: ProfileStore
+    @StateObject private var routesViewModel = DemoRoutesViewModel()
     @EnvironmentObject private var apiSession: APISession
+    @StateObject private var accountViewModel = AccountProfileViewModel()
     @AppStorage("sessionKind") private var sessionKind = "none"
     @State private var showingEditor = false
     @State private var showingDemoVehicles = false
-    @State private var account: AccountProfileDTO?
-    @State private var accountError: String?
-    @State private var publicRoutes: [ServerRoute] = []
 
     var body: some View {
         Group {
             if sessionKind == "demo" {
                 ProfileContent(isOwnProfile: true, profile: profileStore.profile,
+                               publicRoutes: routesViewModel.publicRoutes(for: nil, ownProfile: true),
                                edit: { showingEditor = true },
                                editVehicles: { showingDemoVehicles = true })
-            } else if let account {
+            } else if let account = accountViewModel.account {
                 accountContent(account)
-            } else if let accountError {
+            } else if let accountError = accountViewModel.error {
                 ContentUnavailableView {
                     Label("Не удалось загрузить профиль", systemImage: "wifi.exclamationmark")
                 } description: {
@@ -46,7 +46,7 @@ struct ProfileView: View {
                     EditProfileView(profile: profileStore.profile) { updated in
                         profileStore.profile = updated
                     }
-                } else if let account {
+                } else if let account = accountViewModel.account {
                     AccountProfileEditorView(account: account) {
                         await loadAccount()
                     }
@@ -66,15 +66,7 @@ struct ProfileView: View {
     }
 
     private func loadAccount() async {
-        accountError = nil
-        do {
-            account = try await apiSession.client.send(APIRequest<AccountProfileDTO>(
-                method: .get, path: "users/me"
-            ))
-            publicRoutes = (try? await ServerRoutesAPI.list(apiSession.client, path: "users/me/routes", query: [URLQueryItem(name: "visibility", value: "public")])) ?? []
-        } catch {
-            accountError = error.localizedDescription
-        }
+        await accountViewModel.load(from: RemoteAccountProfileDataSource(session: apiSession))
     }
 
     private func accountContent(_ account: AccountProfileDTO) -> some View {
@@ -163,10 +155,10 @@ struct ProfileView: View {
                     }
                 }
 
-                if !publicRoutes.isEmpty {
+                if !accountViewModel.publicRoutes.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Публичные маршруты").font(.title3.bold())
-                        ForEach(publicRoutes.prefix(3)) { route in
+                        ForEach(accountViewModel.publicRoutes.prefix(3)) { route in
                             NavigationLink {
                                 ServerRouteDetailView(routeID: route.id)
                             } label: {
@@ -188,7 +180,7 @@ struct ProfileView: View {
     private var signOutButton: some View {
         Button("Выйти", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
             Task {
-                await apiSession.signOut()
+                await accountViewModel.signOut(using: RemoteAccountProfileDataSource(session: apiSession))
                 sessionKind = "none"
             }
         }
@@ -218,14 +210,24 @@ struct ProfileView: View {
 }
 
 struct MemberProfileView: View {
-    let author: RouteAuthor
+    let author: RouteAuthor?
+    @EnvironmentObject private var profileStore: ProfileStore
+    @StateObject private var routesViewModel = DemoRoutesViewModel()
 
-    init(author: RouteAuthor = MockData.alex) {
+    init(author: RouteAuthor? = nil) {
         self.author = author
     }
 
     var body: some View {
-        ProfileContent(isOwnProfile: false, profile: .sample, author: author) { }
+        ProfileContent(
+            isOwnProfile: false,
+            profile: profileStore.profile,
+            author: author ?? routesViewModel.routes.first?.author,
+            publicRoutes: routesViewModel.publicRoutes(
+                for: author?.id ?? routesViewModel.routes.first?.author.id,
+                ownProfile: false
+            )
+        ) { }
             .navigationTitle("Профиль")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -241,25 +243,23 @@ private struct ProfileContent: View {
     let isOwnProfile: Bool
     let profile: UserProfile
     let author: RouteAuthor?
+    let publicRoutes: [TrailRoute]
     let edit: () -> Void
     let editVehicles: () -> Void
 
     init(isOwnProfile: Bool, profile: UserProfile, author: RouteAuthor? = nil,
+         publicRoutes: [TrailRoute],
          edit: @escaping () -> Void, editVehicles: @escaping () -> Void = { }) {
         self.isOwnProfile = isOwnProfile
         self.profile = profile
         self.author = author
+        self.publicRoutes = publicRoutes
         self.edit = edit
         self.editVehicles = editVehicles
     }
 
     private var vehicles: [Vehicle] {
         isOwnProfile ? profile.vehicles : (author?.vehicles ?? [])
-    }
-
-    private var publicRoutes: [TrailRoute] {
-        let routes = MockData.routes.filter { !$0.isPrivate }
-        return isOwnProfile ? Array(routes.prefix(3)) : routes.filter { $0.author.id == author?.id }
     }
 
     private func ageDescription(_ birthYear: Int) -> String {

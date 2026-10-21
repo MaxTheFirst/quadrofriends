@@ -28,7 +28,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		C00000042610210000000004 /* Frameworks Copy */ = {
+		C00000042610210000000004 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -85,9 +85,9 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = C00000062610210000000006 /* Build configuration list for PBXNativeTarget "quadrofriendsCopy" */;
 			buildPhases = (
-				C00000032610210000000003 /* Sources Copy */,
-				C00000042610210000000004 /* Frameworks Copy */,
-				C00000052610210000000005 /* Resources Copy */,
+				C00000032610210000000003 /* Sources */,
+				C00000042610210000000004 /* Frameworks */,
+				C00000052610210000000005 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -151,7 +151,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		C00000052610210000000005 /* Resources Copy */ = {
+		C00000052610210000000005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -168,7 +168,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		C00000032610210000000003 /* Sources Copy */ = {
+		C00000032610210000000003 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -365,7 +365,7 @@
 			};
 			name = Release;
 		};
-		C00000072610210000000007 /* Debug Copy */ = {
+		C00000072610210000000007 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = C00000092610210000000009 /* Config.xcconfig */;
 			buildSettings = {
@@ -399,7 +399,7 @@
 			};
 			name = Debug;
 		};
-		C00000082610210000000008 /* Release Copy */ = {
+		C00000082610210000000008 /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = C00000092610210000000009 /* Config.xcconfig */;
 			buildSettings = {
@@ -457,8 +457,8 @@
 		C00000062610210000000006 /* Build configuration list for PBXNativeTarget "quadrofriendsCopy" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				C00000072610210000000007 /* Debug Copy */,
-				C00000082610210000000008 /* Release Copy */,
+				C00000072610210000000007 /* Debug */,
+				C00000082610210000000008 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

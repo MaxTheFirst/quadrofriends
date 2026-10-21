@@ -22,7 +22,7 @@ final class ChatViewController: UIViewController {
     var chatID: String { chat.id }
 
     private let chat: ChatPreview
-    private let repository: any ChatsRepository
+    private let viewModel: ChatThreadViewModel
     private let locationStore: ChatLocationSharingStore
     private let profileStore: ProfileStore
     private var cancellables = Set<AnyCancellable>()
@@ -53,12 +53,12 @@ final class ChatViewController: UIViewController {
 
     init(
         chat: ChatPreview,
-        repository: any ChatsRepository,
+        viewModel: ChatThreadViewModel,
         locationStore: ChatLocationSharingStore,
         profileStore: ProfileStore
     ) {
         self.chat = chat
-        self.repository = repository
+        self.viewModel = viewModel
         self.locationStore = locationStore
         self.profileStore = profileStore
         super.init(nibName: nil, bundle: nil)
@@ -87,7 +87,7 @@ final class ChatViewController: UIViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateLocationState() }
             .store(in: &cancellables)
-        repository.events
+        viewModel.events
             .receive(on: DispatchQueue.main)
             .sink { [weak self] event in self?.handle(event) }
             .store(in: &cancellables)
@@ -149,7 +149,7 @@ final class ChatViewController: UIViewController {
         )
         // Демо-профиль не должен открываться из серверного чата.
         // В UIKit правые кнопки перечисляются справа налево.
-        navigationItem.rightBarButtonItems = repository.isRemote
+        navigationItem.rightBarButtonItems = viewModel.isRemote
             ? [locationBarButton]
             : [profileBarButton, locationBarButton]
     }
@@ -313,7 +313,7 @@ final class ChatViewController: UIViewController {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let page = try await self.repository.messages(chatID: self.chat.id, cursor: nil)
+                let page = try await self.viewModel.messages(chatID: self.chat.id, cursor: nil)
                 // Неотправленные сообщения остаются в ленте.
                 let unsent = self.messages.filter { $0.status == .sending || $0.status == .failed }
                 self.messages = Self.sorted(Self.uniqued(page.items + unsent))
@@ -338,7 +338,7 @@ final class ChatViewController: UIViewController {
         olderMessagesTask = Task { [weak self] in
             guard let self else { return }
             defer { self.olderMessagesTask = nil }
-            guard let page = try? await self.repository.messages(chatID: self.chat.id, cursor: cursor) else { return }
+            guard let page = try? await self.viewModel.messages(chatID: self.chat.id, cursor: cursor) else { return }
             self.olderCursor = page.nextCursor
 
             let knownIDs = Set(self.messages.map(\.id))
@@ -358,7 +358,7 @@ final class ChatViewController: UIViewController {
     /// После переподключения: дочитываем последнюю страницу и сливаем с тем, что уже есть.
     private func resync() {
         Task { [weak self] in
-            guard let self, let page = try? await self.repository.messages(chatID: self.chat.id, cursor: nil) else { return }
+            guard let self, let page = try? await self.viewModel.messages(chatID: self.chat.id, cursor: nil) else { return }
             let knownIDs = Set(self.messages.map(\.id))
             let overlaps = page.items.contains { knownIDs.contains($0.id) }
             let wasAtBottom = self.isScrolledToBottom
@@ -401,7 +401,7 @@ final class ChatViewController: UIViewController {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let sent = try await self.repository.sendPhoto(
+                let sent = try await self.viewModel.sendPhoto(
                     image, chatID: self.chat.id, localID: UUID().uuidString
                 )
                 if !self.messages.contains(where: { $0.id == sent.id }) {
@@ -420,7 +420,7 @@ final class ChatViewController: UIViewController {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let routes = try await self.repository.shareableRoutes()
+                let routes = try await self.viewModel.shareableRoutes()
                 let sheet = UIAlertController(title: "Поделиться маршрутом", message: nil, preferredStyle: .actionSheet)
                 for route in routes.prefix(20) {
                     sheet.addAction(UIAlertAction(title: route.title, style: .default) { [weak self] _ in
@@ -439,7 +439,7 @@ final class ChatViewController: UIViewController {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let sent = try await self.repository.sendRoute(routeID, chatID: self.chat.id, localID: UUID().uuidString)
+                let sent = try await self.viewModel.sendRoute(routeID, chatID: self.chat.id, localID: UUID().uuidString)
                 if !self.messages.contains(where: { $0.id == sent.id }) {
                     self.messages = Self.sorted(self.messages + [sent])
                 }
@@ -464,7 +464,7 @@ final class ChatViewController: UIViewController {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let sent = try await self.repository.sendText(text, chatID: self.chat.id, localID: message.id)
+                let sent = try await self.viewModel.sendText(text, chatID: self.chat.id, localID: message.id)
                 self.messages.removeAll { $0.id == message.id }
                 // Сообщение могло уже прийти по WebSocket раньше ответа на POST.
                 if !self.messages.contains(where: { $0.id == sent.id }) {
@@ -511,7 +511,7 @@ final class ChatViewController: UIViewController {
 
         case .readStateUpdated(let chatID, let userID, let lastReadMessageID):
             // Собеседник прочитал переписку до указанного сообщения — отмечаем свои сообщения прочитанными.
-            guard chatID == chat.id, userID != repository.currentUserID,
+            guard chatID == chat.id, userID != viewModel.currentUserID,
                   let lastIndex = messages.firstIndex(where: { $0.id == lastReadMessageID }) else { return }
             var changedIDs: [ChatMessage.ID] = []
             for index in messages.indices where index <= lastIndex && messages[index].isMine && messages[index].status == .sent {
@@ -535,8 +535,8 @@ final class ChatViewController: UIViewController {
               latest.id != lastMarkedReadID else { return }
         lastMarkedReadID = latest.id
         onRead?(chat.id)
-        Task { [repository, chatID = chat.id] in
-            await repository.markRead(chatID: chatID, messageID: latest.id)
+        Task { [viewModel, chatID = chat.id] in
+            await viewModel.markRead(chatID: chatID, messageID: latest.id)
         }
     }
 
@@ -634,7 +634,7 @@ final class ChatViewController: UIViewController {
 
     private func presentLocationConsent() {
         guard canStartSharing else { return }
-        let consentView = ChatLocationConsentView(chatTitle: chat.title, isLocalOnly: !repository.isRemote) { [weak self] in
+        let consentView = ChatLocationConsentView(chatTitle: chat.title, isLocalOnly: !viewModel.isRemote) { [weak self] in
             guard let self else { return }
             self.locationStore.startSharing(in: self.chat.id, profile: self.profileStore.profile)
         }
@@ -657,7 +657,10 @@ final class ChatViewController: UIViewController {
     }
 
     private func openMemberProfile() {
-        navigationController?.pushViewController(UIHostingController(rootView: MemberProfileView()), animated: true)
+        navigationController?.pushViewController(
+            UIHostingController(rootView: MemberProfileView().environmentObject(profileStore)),
+            animated: true
+        )
     }
 
     private func showLocationErrorIfNeeded() {

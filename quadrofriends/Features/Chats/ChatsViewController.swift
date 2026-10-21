@@ -59,7 +59,7 @@ final class ChatsViewController: UIViewController {
     private static let searchDebounce: Duration = .milliseconds(350)
     private static let prefetchDistance = 5
 
-    private let repository: any ChatsRepository
+    private let viewModel: ChatsListViewModel
     private let locationStore: ChatLocationSharingStore
     private let profileStore: ProfileStore
     private let apiSession: APISession?
@@ -79,7 +79,10 @@ final class ChatsViewController: UIViewController {
     private var dataSource: UICollectionViewDiffableDataSource<Int, ChatPreview.ID>!
 
     init(repository: any ChatsRepository, locationStore: ChatLocationSharingStore, profileStore: ProfileStore, apiSession: APISession?) {
-        self.repository = repository
+        viewModel = ChatsListViewModel(
+            repository: repository,
+            people: apiSession.map(RemoteChatPeopleDataSource.init(session:))
+        )
         self.locationStore = locationStore
         self.profileStore = profileStore
         self.apiSession = apiSession
@@ -106,7 +109,7 @@ final class ChatsViewController: UIViewController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.reconfigureAllChats() }
             .store(in: &cancellables)
-        repository.events
+        viewModel.events
             .receive(on: DispatchQueue.main)
             .sink { [weak self] event in self?.handle(event) }
             .store(in: &cancellables)
@@ -187,7 +190,7 @@ final class ChatsViewController: UIViewController {
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
-        if repository.isRemote {
+        if viewModel.isRemote {
             let refreshControl = UIRefreshControl()
             refreshControl.addAction(UIAction { [weak self] _ in self?.reload() }, for: .valueChanged)
             collectionView.refreshControl = refreshControl
@@ -224,17 +227,8 @@ final class ChatsViewController: UIViewController {
             }
             guard let self, !Task.isCancelled else { return }
             do {
-                let page = try await self.repository.chats(query: query, cursor: nil)
-                var users: [UserSummaryDTO] = []
-                if let session = self.apiSession, !query.isEmpty {
-                    let normalized = query.replacingOccurrences(of: "^@", with: "", options: .regularExpression)
-                    let people: Page<UserSummaryDTO> = try await session.client.send(APIRequest(
-                        method: .get,
-                        path: "users",
-                        query: [URLQueryItem(name: "query", value: normalized), URLQueryItem(name: "limit", value: "30")]
-                    ))
-                    users = people.items.filter { $0.id != session.currentUserID }
-                }
+                let page = try await self.viewModel.chats(query: query, cursor: nil)
+                let users = try await self.viewModel.searchUsers(query: query)
                 guard !Task.isCancelled else { return }
                 self.chats = Self.uniqued(page.items)
                 self.foundUsers = users
@@ -261,7 +255,7 @@ final class ChatsViewController: UIViewController {
         loadMoreTask = Task { [weak self] in
             guard let self else { return }
             defer { self.loadMoreTask = nil }
-            guard let page = try? await self.repository.chats(query: query, cursor: cursor),
+            guard let page = try? await self.viewModel.chats(query: query, cursor: cursor),
                   !Task.isCancelled else { return }
             self.chats = Self.uniqued(self.chats + page.items)
             self.nextCursor = page.nextCursor
@@ -388,7 +382,7 @@ final class ChatsViewController: UIViewController {
     private func openChat(_ chat: ChatPreview) {
         let controller = ChatViewController(
             chat: chat,
-            repository: repository,
+            viewModel: viewModel.threadViewModel(),
             locationStore: locationStore,
             profileStore: profileStore
         )
@@ -397,29 +391,14 @@ final class ChatsViewController: UIViewController {
     }
 
     private func startDirectChat(with user: UserSummaryDTO) {
-        guard let apiSession else { return }
+        guard viewModel.isRemote else { return }
         Task { [weak self] in
             guard let self else { return }
             do {
-                let chat: ChatSummaryDTO = try await apiSession.client.send(APIRequest(
-                    method: .post,
-                    path: "chats",
-                    body: ChatCreateRequest(kind: "direct", participantUserIds: [user.id], title: nil),
-                    idempotencyKey: UUID().uuidString
-                ))
+                let chat = try await self.viewModel.startDirectChat(with: user)
                 self.navigationItem.searchController?.searchBar.text = ""
                 self.reload()
-                self.openChat(ChatPreview(
-                    id: chat.id,
-                    title: chat.title,
-                    subtitle: "Нет сообщений",
-                    time: "Сейчас",
-                    unread: chat.unreadCount,
-                    avatarImage: nil,
-                    initials: user.initials,
-                    avatarURL: chat.avatar?.thumbnailUrl,
-                    sharesLocation: chat.sharesLocation
-                ))
+                self.openChat(chat)
             } catch {
                 self.presentError(error)
             }
@@ -468,7 +447,7 @@ extension ChatsViewController: UISearchResultsUpdating {
         let newQuery = (searchController.searchBar.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard newQuery != query else { return }
         query = newQuery
-        reload(debounced: repository.isRemote)
+        reload(debounced: viewModel.isRemote)
     }
 }
 

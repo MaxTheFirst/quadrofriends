@@ -1,22 +1,6 @@
 import PhotosUI
 import SwiftUI
 
-private struct AccountProfileUpdate: Encodable {
-    let firstName: String
-    let lastName: String
-    let username: String
-    let birthYear: Int?
-    let city: String
-    let avatarMediaId: String?
-}
-
-private struct AccountVehicleWrite: Encodable {
-    let model: String
-    let year: Int
-    let imageMediaId: String?
-    let isPrimary: Bool
-}
-
 private struct VehicleEditorTarget: Identifiable {
     let id = UUID()
     let vehicle: AccountVehicleDTO?
@@ -25,6 +9,7 @@ private struct VehicleEditorTarget: Identifiable {
 struct AccountProfileEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var session: APISession
+    private let viewModel = AccountEditingViewModel()
     let onSaved: () async -> Void
     @State private var firstName: String
     @State private var lastName: String
@@ -34,7 +19,6 @@ struct AccountProfileEditorView: View {
     @State private var avatarURL: URL?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var previewImage: UIImage?
-    @State private var avatarMediaID: String?
     @State private var error: String?
     @State private var isSaving = false
     @State private var isLoadingPhoto = false
@@ -126,21 +110,18 @@ struct AccountProfileEditorView: View {
         isSaving = true
         defer { isSaving = false }
         do {
-            if let previewImage {
-                avatarMediaID = try await session.client.uploadImage(previewImage).id
-            }
-            let _: AccountProfileDTO = try await session.client.send(APIRequest(
-                method: .patch,
-                path: "users/me",
-                body: AccountProfileUpdate(
+            try await viewModel.saveProfile(
+                AccountProfileUpdate(
                     firstName: firstName.trimmingCharacters(in: .whitespacesAndNewlines),
                     lastName: lastName.trimmingCharacters(in: .whitespacesAndNewlines),
                     username: username,
                     birthYear: Int(birthYear),
                     city: city.trimmingCharacters(in: .whitespacesAndNewlines),
-                    avatarMediaId: avatarMediaID
-                )
-            ))
+                    avatarMediaId: nil
+                ),
+                avatar: previewImage,
+                using: RemoteAccountEditingDataSource(session: session)
+            )
             await onSaved()
             dismiss()
         } catch {
@@ -151,6 +132,7 @@ struct AccountProfileEditorView: View {
 
 struct AccountVehiclesView: View {
     @EnvironmentObject private var session: APISession
+    private let viewModel = AccountEditingViewModel()
     let account: AccountProfileDTO
     let onChanged: () async -> Void
     @State private var vehicles: [AccountVehicleDTO]
@@ -223,9 +205,10 @@ struct AccountVehiclesView: View {
 
     private func deleteVehicle(_ vehicle: AccountVehicleDTO) async {
         do {
-            let _: EmptyResponse = try await session.client.send(APIRequest(
-                method: .delete, path: "users/me/vehicles/\(vehicle.id)"
-            ))
+            try await viewModel.deleteVehicle(
+                id: vehicle.id,
+                using: RemoteAccountEditingDataSource(session: session)
+            )
             vehicles.removeAll { $0.id == vehicle.id }
             await onChanged()
         } catch {
@@ -237,6 +220,7 @@ struct AccountVehiclesView: View {
 private struct AccountVehicleEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var session: APISession
+    private let viewModel = AccountEditingViewModel()
     let vehicle: AccountVehicleDTO?
     let onSaved: (AccountVehicleDTO) -> Void
     @State private var model: String
@@ -317,18 +301,15 @@ private struct AccountVehicleEditorView: View {
         isSaving = true
         defer { isSaving = false }
         do {
-            var imageID = vehicle?.image?.id
-            if let previewImage {
-                imageID = try await session.client.uploadImage(previewImage).id
-            }
-            let saved: AccountVehicleDTO = try await session.client.send(APIRequest(
-                method: vehicle == nil ? .post : .patch,
-                path: vehicle.map { "users/me/vehicles/\($0.id)" } ?? "users/me/vehicles",
-                body: AccountVehicleWrite(
+            let saved = try await viewModel.saveVehicle(
+                AccountVehicleWrite(
                     model: model.trimmingCharacters(in: .whitespacesAndNewlines), year: year,
-                    imageMediaId: imageID, isPrimary: isPrimary
-                )
-            ))
+                    imageMediaId: vehicle?.image?.id, isPrimary: isPrimary
+                ),
+                id: vehicle?.id,
+                image: previewImage,
+                using: RemoteAccountEditingDataSource(session: session)
+            )
             onSaved(saved)
             dismiss()
         } catch {

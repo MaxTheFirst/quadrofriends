@@ -1,25 +1,16 @@
-import SwiftUI
 import Combine
 
 @MainActor
 final class ProfileStore: ObservableObject {
     @Published var profile: UserProfile {
-        didSet { save() }
+        didSet { dataSource.saveProfile(profile) }
     }
 
-    private let storageKey = "ownProfile.v1"
+    private let dataSource: any DemoProfileDataSource
 
-    init() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
-           let saved = try? JSONDecoder().decode(UserProfile.self, from: data) {
-            profile = saved
-        } else {
-            profile = .sample
-        }
-    }
-
-    private func save() {
-        guard let data = try? JSONEncoder().encode(profile) else { return }
-        UserDefaults.standard.set(data, forKey: storageKey)
+    init(dataSource: (any DemoProfileDataSource)? = nil) {
+        let source = dataSource ?? DemoRepository.shared
+        self.dataSource = source
+        profile = source.profile()
     }
 }
