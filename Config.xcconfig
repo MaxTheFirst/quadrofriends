@@ -1,0 +1,4 @@
+SLASH = /
+API_BASE_URL = https:$(SLASH)$(SLASH)api.pdfshare.ru/api
+
+#include? "Local.xcconfig"

@@ -8,6 +8,8 @@
 
 /* Begin PBXFileReference section */
 		BF66D7A03061815100814116 /* quadrofriends.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = quadrofriends.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C00000012610210000000001 /* quadrofriendsCopy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = quadrofriendsCopy.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C00000092610210000000009 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -26,12 +28,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C00000042610210000000004 /* Frameworks Copy */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		BF66D7973061815100814116 = {
 			isa = PBXGroup;
 			children = (
+				C00000092610210000000009 /* Config.xcconfig */,
 				BF66D7A23061815100814116 /* quadrofriends */,
 				BF66D7A13061815100814116 /* Products */,
 			);
@@ -41,6 +51,7 @@
 			isa = PBXGroup;
 			children = (
 				BF66D7A03061815100814116 /* quadrofriends.app */,
+				C00000012610210000000001 /* quadrofriendsCopy.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,6 +81,28 @@
 			productReference = BF66D7A03061815100814116 /* quadrofriends.app */;
 			productType = "com.apple.product-type.application";
 		};
+		C00000022610210000000002 /* quadrofriendsCopy */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C00000062610210000000006 /* Build configuration list for PBXNativeTarget "quadrofriendsCopy" */;
+			buildPhases = (
+				C00000032610210000000003 /* Sources Copy */,
+				C00000042610210000000004 /* Frameworks Copy */,
+				C00000052610210000000005 /* Resources Copy */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				BF66D7A23061815100814116 /* quadrofriends */,
+			);
+			name = quadrofriendsCopy;
+			packageProductDependencies = (
+			);
+			productName = quadrofriendsCopy;
+			productReference = C00000012610210000000001 /* quadrofriendsCopy.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -83,6 +116,9 @@
 					BF66D79F3061815100814116 = {
 						CreatedOnToolsVersion = 26.2;
 					};
+					C00000022610210000000002 = {
+						CreatedOnToolsVersion = 26.2;
+					};
 				};
 			};
 			buildConfigurationList = BF66D79B3061815100814116 /* Build configuration list for PBXProject "quadrofriends" */;
@@ -94,12 +130,15 @@
 			);
 			mainGroup = BF66D7973061815100814116;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = BF66D7A13061815100814116 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				BF66D79F3061815100814116 /* quadrofriends */,
+				C00000022610210000000002 /* quadrofriendsCopy */,
 			);
 		};
 /* End PBXProject section */
@@ -112,10 +151,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C00000052610210000000005 /* Resources Copy */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		BF66D79C3061815100814116 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C00000032610210000000003 /* Sources Copy */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -246,13 +299,16 @@
 		};
 		BF66D7AC3061815200814116 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C00000092610210000000009 /* Config.xcconfig */;
 			buildSettings = {
+				APP_DISPLAY_NAME = quadrofriends;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -277,13 +333,16 @@
 		};
 		BF66D7AD3061815200814116 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C00000092610210000000009 /* Config.xcconfig */;
 			buildSettings = {
+				APP_DISPLAY_NAME = quadrofriends;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -295,6 +354,74 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = maxproger.quadrofriends;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		C00000072610210000000007 /* Debug Copy */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = C00000092610210000000009 /* Config.xcconfig */;
+			buildSettings = {
+				APP_DISPLAY_NAME = "quadrofriends 2";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = maxproger.quadrofriends.copy;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C00000082610210000000008 /* Release Copy */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = C00000092610210000000009 /* Config.xcconfig */;
+			buildSettings = {
+				APP_DISPLAY_NAME = "quadrofriends 2";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = maxproger.quadrofriends.copy;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -323,6 +450,15 @@
 			buildConfigurations = (
 				BF66D7AC3061815200814116 /* Debug */,
 				BF66D7AD3061815200814116 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C00000062610210000000006 /* Build configuration list for PBXNativeTarget "quadrofriendsCopy" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C00000072610210000000007 /* Debug Copy */,
+				C00000082610210000000008 /* Release Copy */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
