@@ -204,37 +204,49 @@ final class RemoteChatsRepository: ChatsRepository {
 final class DemoChatsRepository: ChatsRepository {
     let isRemote = false
     let currentUserID: String? = nil
+    private let dataSource: any DemoChatsDataSource & DemoRoutesDataSource
+
+    init(dataSource: (any DemoChatsDataSource & DemoRoutesDataSource)? = nil) {
+        self.dataSource = dataSource ?? DemoRepository.shared
+    }
 
     var events: AnyPublisher<ChatEvent, Never> {
         Empty().eraseToAnyPublisher()
     }
 
     func chats(query: String, cursor: String?) async throws -> Page<ChatPreview> {
-        let chats = query.isEmpty ? MockData.chats : MockData.chats.filter {
+        let storedChats = dataSource.chats()
+        let chats = query.isEmpty ? storedChats : storedChats.filter {
             $0.title.localizedCaseInsensitiveContains(query) || $0.subtitle.localizedCaseInsensitiveContains(query)
         }
         return Page(items: chats, nextCursor: nil)
     }
 
     func messages(chatID: String, cursor: String?) async throws -> Page<ChatMessage> {
-        Page(items: MockData.chatMessages.reversed(), nextCursor: nil)
+        Page(items: dataSource.messages(in: chatID).reversed(), nextCursor: nil)
     }
 
     func sendText(_ text: String, chatID: String, localID: String) async throws -> ChatMessage {
         try await Task.sleep(for: .milliseconds(300))
-        return ChatMessage(id: localID, author: "Вы", isMine: true, sentAt: Date(), kind: .text(text), status: .sent)
+        let message = ChatMessage(id: localID, author: "Вы", isMine: true, sentAt: Date(), kind: .text(text), status: .sent)
+        dataSource.appendMessage(message, in: chatID)
+        return message
     }
 
     func sendPhoto(_ image: UIImage, chatID: String, localID: String) async throws -> ChatMessage {
-        ChatMessage(id: localID, author: "Вы", isMine: true, sentAt: Date(), kind: .photo(nil, image, nil), status: .sent)
+        let message = ChatMessage(id: localID, author: "Вы", isMine: true, sentAt: Date(), kind: .photo(nil, image, nil), status: .sent)
+        dataSource.appendMessage(message, in: chatID)
+        return message
     }
 
     func sendRoute(_ routeID: String, chatID: String, localID: String) async throws -> ChatMessage {
-        ChatMessage(id: localID, author: "Вы", isMine: true, sentAt: Date(), kind: .text("Маршрут"), status: .sent)
+        let message = ChatMessage(id: localID, author: "Вы", isMine: true, sentAt: Date(), kind: .text("Маршрут"), status: .sent)
+        dataSource.appendMessage(message, in: chatID)
+        return message
     }
 
     func shareableRoutes() async throws -> [ChatShareableRoute] {
-        MockData.routes.filter { !$0.isPrivate }.map { ChatShareableRoute(id: $0.id, title: $0.title) }
+        dataSource.routes().filter { !$0.isPrivate }.map { ChatShareableRoute(id: $0.id, title: $0.title) }
     }
 
     func markRead(chatID: String, messageID: String) async { }

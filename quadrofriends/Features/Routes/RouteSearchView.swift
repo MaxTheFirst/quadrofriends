@@ -1,29 +1,11 @@
 import SwiftUI
 
-enum RouteSearchFilter: String, CaseIterable, Identifiable {
-    case all = "Все"
-    case publicRoutes = "Публичные"
-    case privateRoutes = "Приватные"
-
-    var id: Self { self }
-}
-
 struct RouteSearchView: View {
+    @StateObject private var viewModel = DemoRoutesViewModel()
     @State private var query = ""
     @State private var filter = RouteSearchFilter.all
 
-    private var results: [TrailRoute] {
-        MockData.routes.filter { route in
-            let matchesQuery = query.isEmpty || route.title.localizedCaseInsensitiveContains(query) || route.description.localizedCaseInsensitiveContains(query)
-            let matchesFilter: Bool
-            switch filter {
-            case .all: matchesFilter = true
-            case .publicRoutes: matchesFilter = !route.isPrivate
-            case .privateRoutes: matchesFilter = route.isPrivate
-            }
-            return matchesQuery && matchesFilter
-        }
-    }
+    private var results: [TrailRoute] { viewModel.search(query: query, filter: filter) }
 
     var body: some View {
         ScrollView {
@@ -38,7 +20,7 @@ struct RouteSearchView: View {
                 if query.isEmpty && filter == .all {
                     VStack(spacing: 12) {
                         SectionTitle(title: "Рекомендуемые", action: "Смотреть все")
-                        ForEach(MockData.routes.prefix(2)) { route in
+                        ForEach(viewModel.recommendedRoutes) { route in
                             NavigationLink {
                                 RouteDetailView(route: route)
                             } label: {

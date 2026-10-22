@@ -8,20 +8,20 @@ struct ChatCreateRequest: Encodable {
 
 struct NewChatView: View {
     @Environment(\.dismiss) private var dismiss
-    let session: APISession?
+    private let hasAccount: Bool
     let onCreated: (ChatPreview) -> Void
+    @StateObject private var viewModel: NewChatViewModel
     @State private var query = ""
-    @State private var users: [UserSummaryDTO] = []
     @State private var selected: Set<String> = []
     @State private var isGroup = false
     @State private var groupTitle = ""
-    @State private var isLoading = false
-    @State private var isCreating = false
-    @State private var error: String?
 
     init(session: APISession? = nil, onCreated: @escaping (ChatPreview) -> Void = { _ in }) {
-        self.session = session
+        hasAccount = session != nil
         self.onCreated = onCreated
+        _viewModel = StateObject(wrappedValue: NewChatViewModel(
+            people: session.map(RemoteChatPeopleDataSource.init(session:))
+        ))
     }
 
     private var normalizedQuery: String {
@@ -36,7 +36,7 @@ struct NewChatView: View {
 
     var body: some View {
         List {
-            if session != nil {
+            if hasAccount {
                 Section {
                     Toggle("Создать группу", isOn: $isGroup)
                     if isGroup { TextField("Название группы", text: $groupTitle) }
@@ -44,15 +44,15 @@ struct NewChatView: View {
                 Section("Пользователи") {
                     if normalizedQuery.isEmpty {
                         Text("Введите имя или @username").foregroundStyle(.secondary)
-                    } else if isLoading {
+                    } else if viewModel.isLoading {
                         ProgressView("Ищем пользователей")
-                    } else if let error {
+                    } else if let error = viewModel.error {
                         Text(error).foregroundStyle(.red)
                         Button("Повторить") { Task { await search() } }
-                    } else if users.isEmpty {
+                    } else if viewModel.users.isEmpty {
                         Text("Пользователи не найдены").foregroundStyle(.secondary)
                     } else {
-                        ForEach(users, id: \.id) { user in
+                        ForEach(viewModel.users, id: \.id) { user in
                             Button { choose(user.id) } label: {
                                 HStack(spacing: 12) {
                                     AvatarView(imageName: nil, initials: user.initials, size: 42)
@@ -68,7 +68,7 @@ struct NewChatView: View {
                         }
                     }
                 }
-                if let error, !users.isEmpty {
+                if let error = viewModel.error, !viewModel.users.isEmpty {
                     Section { Text(error).foregroundStyle(.red) }
                 }
             } else {
@@ -90,11 +90,11 @@ struct NewChatView: View {
                 Button("Начать", systemImage: "arrow.right") { Task { await createChat() } }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderedProminent)
-                    .disabled(!canCreate || isCreating || session == nil)
+                    .disabled(!canCreate || viewModel.isCreating || !hasAccount)
             }
         }
         .task(id: normalizedQuery) {
-            guard session != nil else { return }
+            guard hasAccount else { return }
             if !normalizedQuery.isEmpty {
                 try? await Task.sleep(for: .milliseconds(300))
                 guard !Task.isCancelled else { return }
@@ -112,58 +112,14 @@ struct NewChatView: View {
     }
 
     private func search() async {
-        guard let session else { return }
-        guard !normalizedQuery.isEmpty else {
-            users = []
-            error = nil
-            return
-        }
-        isLoading = true
-        error = nil
-        do {
-            let page: Page<UserSummaryDTO> = try await session.client.send(APIRequest(
-                method: .get,
-                path: "users",
-                query: [URLQueryItem(name: "query", value: normalizedQuery), URLQueryItem(name: "limit", value: "50")]
-            ))
-            guard !Task.isCancelled else { return }
-            users = page.items.filter { $0.id != session.currentUserID }
-        } catch {
-            guard !Task.isCancelled else { return }
-            self.error = error.localizedDescription
-        }
-        isLoading = false
+        await viewModel.search(query: normalizedQuery)
     }
 
     private func createChat() async {
-        guard let session, canCreate else { return }
-        isCreating = true
-        error = nil
-        do {
-            let chat: ChatSummaryDTO = try await session.client.send(APIRequest(
-                method: .post,
-                path: "chats",
-                body: ChatCreateRequest(
-                    kind: isGroup ? "group" : "direct",
-                    participantUserIds: Array(selected),
-                    title: isGroup ? groupTitle.trimmingCharacters(in: .whitespacesAndNewlines) : nil
-                ),
-                idempotencyKey: UUID().uuidString
-            ))
-            onCreated(ChatPreview(
-                id: chat.id,
-                title: chat.title,
-                subtitle: "Нет сообщений",
-                time: "Сейчас",
-                unread: chat.unreadCount,
-                avatarImage: nil,
-                initials: String(chat.title.prefix(2)).uppercased(),
-                avatarURL: chat.avatar?.thumbnailUrl,
-                sharesLocation: chat.sharesLocation
-            ))
-        } catch {
-            self.error = error.localizedDescription
+        guard canCreate else { return }
+        let title = isGroup ? groupTitle.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        if let chat = await viewModel.createChat(participantIDs: Array(selected), groupTitle: title) {
+            onCreated(chat)
         }
-        isCreating = false
     }
 }

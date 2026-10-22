@@ -2,11 +2,8 @@ import SwiftUI
 
 struct ServerMyRoutesView: View {
     @EnvironmentObject private var session: APISession
+    @StateObject private var viewModel = ServerMyRoutesViewModel()
     @State private var selectedTab = MyRoutesTab.recent
-    @State private var routes: [ServerRoute] = []
-    @State private var folders: [ServerRouteFolder] = []
-    @State private var isLoading = true
-    @State private var error: String?
     @State private var showingNewFolder = false
 
     var body: some View {
@@ -19,10 +16,10 @@ struct ServerMyRoutesView: View {
                 }
                 .pickerStyle(.segmented)
 
-                if isLoading {
+                if viewModel.isLoading {
                     ProgressView("Загружаем маршруты")
                         .frame(maxWidth: .infinity)
-                } else if let error {
+                } else if let error = viewModel.error {
                     ContentUnavailableView {
                         Label("Не удалось загрузить маршруты", systemImage: "wifi.exclamationmark")
                     } description: {
@@ -31,7 +28,7 @@ struct ServerMyRoutesView: View {
                         Button("Повторить") { Task { await load() } }
                     }
                 } else {
-                    ForEach(routes) { route in
+                    ForEach(viewModel.routes) { route in
                         NavigationLink {
                             ServerRouteDetailView(routeID: route.id)
                         } label: {
@@ -47,11 +44,11 @@ struct ServerMyRoutesView: View {
                     Button("Новая папка") { showingNewFolder = true }
                         .font(.subheadline)
                 }
-                if folders.isEmpty && !isLoading && error == nil {
+                if viewModel.folders.isEmpty && !viewModel.isLoading && viewModel.error == nil {
                     Text("Папок пока нет")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
-                ForEach(folders) { folder in
+                ForEach(viewModel.folders) { folder in
                     NavigationLink {
                         ServerFolderView(folder: folder)
                     } label: {
@@ -85,34 +82,21 @@ struct ServerMyRoutesView: View {
     }
 
     private func load() async {
-        isLoading = true
-        error = nil
-        do {
-            let path = selectedTab == .recent ? "users/me/recent-routes" : "users/me/routes"
-            let query = selectedTab == .privateRoutes ? [URLQueryItem(name: "visibility", value: "private")] : []
-            routes = try await ServerRoutesAPI.list(session.client, path: path, query: query)
-            let loadedFolders: Page<ServerRouteFolder> = try await session.client.send(APIRequest(method: .get, path: "users/me/folders", query: [URLQueryItem(name: "limit", value: "100")]))
-            folders = loadedFolders.items
-        } catch {
-            self.error = error.localizedDescription
-        }
-        isLoading = false
+        await viewModel.load(tab: selectedTab, from: RemoteServerRoutesDataSource(session: session))
     }
 }
 
 private struct ServerFolderView: View {
     @EnvironmentObject private var session: APISession
     let folder: ServerRouteFolder
-    @State private var routes: [ServerRoute] = []
-    @State private var error: String?
-    @State private var isLoading = true
+    @StateObject private var viewModel = ServerRoutesQueryViewModel()
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
-                if isLoading {
+                if viewModel.isLoading {
                     ProgressView("Загружаем папку")
-                } else if let error {
+                } else if let error = viewModel.error {
                     ContentUnavailableView {
                         Label("Не удалось загрузить папку", systemImage: "wifi.exclamationmark")
                     } description: {
@@ -121,7 +105,7 @@ private struct ServerFolderView: View {
                         Button("Повторить") { Task { await load() } }
                     }
                 } else {
-                    ForEach(routes) { route in
+                    ForEach(viewModel.routes) { route in
                         NavigationLink {
                             ServerRouteDetailView(routeID: route.id)
                         } label: {
@@ -140,14 +124,10 @@ private struct ServerFolderView: View {
     }
 
     private func load() async {
-        isLoading = true
-        error = nil
-        do {
-            routes = try await ServerRoutesAPI.list(session.client, path: "users/me/folders/\(folder.id)/routes")
-        } catch {
-            self.error = error.localizedDescription
-        }
-        isLoading = false
+        await viewModel.load(
+            path: "users/me/folders/\(folder.id)/routes",
+            from: RemoteServerRoutesDataSource(session: session)
+        )
     }
 }
 
@@ -155,15 +135,14 @@ private struct ServerNewFolderView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var session: APISession
     let onCreated: () async -> Void
+    @StateObject private var viewModel = ServerNewFolderViewModel()
     @State private var name = ""
-    @State private var error: String?
-    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
             Form {
                 TextField("Название папки", text: $name)
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error = viewModel.error { Text(error).foregroundStyle(.red) }
             }
             .navigationTitle("Новая папка")
             .navigationBarTitleDisplayMode(.inline)
@@ -173,7 +152,7 @@ private struct ServerNewFolderView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Создать") { Task { await create() } }
-                        .disabled(isSaving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(viewModel.isSaving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
@@ -181,23 +160,9 @@ private struct ServerNewFolderView: View {
     }
 
     private func create() async {
-        isSaving = true
-        defer { isSaving = false }
-        do {
-            let _: ServerRouteFolder = try await session.client.send(APIRequest(
-                method: .post,
-                path: "users/me/folders",
-                body: CreateFolderRequest(name: name.trimmingCharacters(in: .whitespacesAndNewlines)),
-                idempotencyKey: UUID().uuidString
-            ))
+        if await viewModel.create(name: name, using: RemoteServerRoutesDataSource(session: session)) {
             await onCreated()
             dismiss()
-        } catch {
-            self.error = error.localizedDescription
         }
     }
-}
-
-private struct CreateFolderRequest: Encodable {
-    let name: String
 }

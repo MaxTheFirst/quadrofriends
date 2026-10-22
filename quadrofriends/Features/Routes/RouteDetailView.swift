@@ -4,6 +4,7 @@ struct RouteDetailView: View {
     let route: TrailRoute
     var onStart: (() -> Void)? = nil
 
+    @StateObject private var viewModel = DemoRoutesViewModel()
     @Environment(\.dismiss) private var dismiss
     @State private var isFavorite = false
     @State private var showingStarted = false
@@ -90,7 +91,7 @@ struct RouteDetailView: View {
                         }
                         .buttonStyle(.plain)
                         NavigationLink {
-                            RouteMarkerView(route: MockData.routes[1])
+                            RouteMarkerView(route: viewModel.route(id: "mud-weekend") ?? route)
                         } label: {
                             MarkerRow(imageName: "RouteMud", title: "Брод", subtitle: "Глубокий брод, будь осторожен", distance: "7,8 км")
                         }
